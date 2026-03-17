@@ -5,35 +5,9 @@ logger = logging.getLogger("aishub2nmea")
 
 AIS_CHARS = "0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_ !\"#$%&'()*+,-./"
 
-
 ###############################################################################
-# Utility helpers
+# Utilities
 ###############################################################################
-
-def sixbit_encode(bits):
-    while len(bits) % 6:
-        bits += "0"
-
-    out = ""
-    for i in range(0, len(bits), 6):
-        out += AIS_CHARS[int(bits[i:i+6], 2)]
-
-    fill = (6 - (len(bits) % 6)) % 6
-    return out, fill
-
-
-def to_signed(value, bits):
-    if value < 0:
-        value = (1 << bits) + value
-    return format(value & ((1 << bits) - 1), f"0{bits}b")
-
-
-def safe_float(v, default=0.0):
-    try:
-        return float(v)
-    except:
-        return default
-
 
 def safe_int(v, default=0):
     try:
@@ -41,47 +15,72 @@ def safe_int(v, default=0):
     except:
         return default
 
+def safe_float(v, default=0.0):
+    try:
+        return float(v)
+    except:
+        return default
+
+def to_signed(value, bits):
+    if value < 0:
+        value = (1 << bits) + value
+    return format(value & ((1 << bits) - 1), "0{}b".format(bits))
 
 def sixbit_ascii(text, length):
-    if not text:
+    if text is None:
         text = ""
-    text = text.upper()[:length].ljust(length)
+    text = text.upper()
+    text = text[:length].ljust(length)
     bits = ""
     for c in text:
         code = ord(c) - 32
         if code < 0 or code > 63:
             code = 0
-        bits += f"{code:06b}"
+        bits += "{:06b}".format(code)
     return bits
 
+def sixbit_encode(bits):
+    while len(bits) % 6 != 0:
+        bits += "0"
+    payload = ""
+    for i in range(0, len(bits), 6):
+        chunk = bits[i:i+6]
+        payload += AIS_CHARS[int(chunk, 2)]
+    fill = (6 - (len(bits) % 6)) % 6
+    return payload, fill
+
+def nmea_checksum(body):
+    cs = 0
+    for c in body:
+        cs ^= ord(c)
+    return "{:02X}".format(cs)
 
 ###############################################################################
-# DEBUG PRINTER
+# Debug printer
 ###############################################################################
 
-def debug_bits(label, bits):
-    logger.error(f"===== DEBUG {label} (TOTAL {len(bits)} BITS) =====")
+def debug_bits(label, bits, mmsi):
+    logger.error("===== DEBUG {} FOR MMSI {} ({} bits) =====".format(label, mmsi, len(bits)))
     for i in range(0, len(bits), 32):
-        segment = bits[i:i+32]
-        logger.error(f"{i:03d}-{i+len(segment):03d}: {segment} (len={len(segment)})")
-    logger.error("=======================================")
-
+        seg = bits[i:i+32]
+        logger.error("{:03d}-{:03d}: {} (len={})".format(i, i+len(seg), seg, len(seg)))
+    logger.error("===============================================")
 
 ###############################################################################
-# MESSAGE TYPE 1 — dynamic
+# AIS MESSAGE TYPE 1
 ###############################################################################
 
 def encode_msg_type1(v):
-    """Debug version with bit printing"""
-
     mmsi = safe_int(v.get("mmsi"), None)
     if not mmsi:
         return None, None
 
     lat = safe_float(v.get("lat"), None)
     lon = safe_float(v.get("lon"), None)
+
     if lat is None or lon is None:
         return None, None
+
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return None, None
 
@@ -120,40 +119,36 @@ def encode_msg_type1(v):
     timestamp = datetime.datetime.utcnow().second
 
     bits = ""
-    bits += "000001"                      # msg ID
-    bits += "00"                          # repeat
-    bits += f"{mmsi:030b}"
-    bits += f"{navstat:04b}"
+    bits += "000001"                 # Msg ID = 1
+    bits += "00"                     # Repeat
+    bits += "{:030b}".format(mmsi)
+    bits += "{:04b}".format(navstat)
     bits += to_signed(rot, 8)
-    bits += f"{sog:010b}"
-    bits += f"{accuracy:01b}"
+    bits += "{:010b}".format(sog)
+    bits += "{:01b}".format(accuracy)
     bits += to_signed(lon_ais, 28)
     bits += to_signed(lat_ais, 27)
-    bits += f"{cog:012b}"
-    bits += f"{heading:09b}"
-    bits += f"{timestamp:06b}"
-    bits += "00"                          # maneuver
-    bits += "0"                           # raim
-    bits += "0" * 19                      # radio status
+    bits += "{:012b}".format(cog)
+    bits += "{:09b}".format(heading)
+    bits += "{:06b}".format(timestamp)
+    bits += "00"
+    bits += "0"
+    bits += "0" * 19
 
-    # PRINT DEBUG
-    debug_bits(f"MSG1 FOR MMSI {mmsi}", bits)
+    debug_bits("MSG1", bits, mmsi)
 
     if len(bits) != 168:
-        logger.error(f"BAD MSG1 LENGTH {len(bits)} INBOUND DATA={v}")
+        logger.error("BAD MSG1 LENGTH {} FOR {}".format(len(bits), v))
         return None, None
 
     payload, fill = sixbit_encode(bits)
     return payload, fill
 
-
 ###############################################################################
-# MESSAGE TYPE 5 — static & voyage
+# AIS MESSAGE TYPE 5
 ###############################################################################
 
 def encode_msg_type5(v):
-    """Debug version with bit printing"""
-
     mmsi = safe_int(v.get("mmsi"), None)
     if not mmsi:
         return None
@@ -168,7 +163,8 @@ def encode_msg_type5(v):
     dim_c = safe_int(v.get("C"), 0)
     dim_d = safe_int(v.get("D"), 0)
 
-    draught = int(safe_float(v.get("draught"), 0) * 10)
+    draught_m = safe_float(v.get("draught"), 0.0)
+    draught = int(draught_m * 10)
 
     dest = v.get("dest", "")
 
@@ -182,72 +178,64 @@ def encode_msg_type5(v):
         month = day = hour = minute = 0
 
     bits = ""
-    bits += f"{5:06b}"
+    bits += "{:06b}".format(5)
     bits += "00"
-    bits += f"{mmsi:030b}"
-    bits += f"{1:02b}"
-    bits += f"{imo:030b}"
+    bits += "{:030b}".format(mmsi)
+    bits += "01"                        # AIS version
+    bits += "{:030b}".format(imo)
     bits += sixbit_ascii(callsign, 7)
     bits += sixbit_ascii(name, 20)
-    bits += f"{shiptype:08b}"
-    bits += f"{dim_a:09b}"
-    bits += f"{dim_b:09b}"
-    bits += f"{dim_c:06b}"
-    bits += f"{dim_d:06b}"
-    bits += f"{month:04b}"
-    bits += f"{day:05b}"
-    bits += f"{hour:05b}"
-    bits += f"{minute:06b}"
-    bits += f"{draught:08b}"
+    bits += "{:08b}".format(shiptype)
+    bits += "{:09b}".format(dim_a)
+    bits += "{:09b}".format(dim_b)
+    bits += "{:06b}".format(dim_c)
+    bits += "{:06b}".format(dim_d)
+    bits += "{:04b}".format(month)
+    bits += "{:05b}".format(day)
+    bits += "{:05b}".format(hour)
+    bits += "{:06b}".format(minute)
+    bits += "{:08b}".format(draught)
     bits += sixbit_ascii(dest, 20)
     bits += "0"
     bits += "0"
 
-    # PRINT DEBUG
-    debug_bits(f"MSG5 FOR MMSI {mmsi}", bits)
+    debug_bits("MSG5", bits, mmsi)
 
     if len(bits) != 424:
-        logger.error(f"BAD MSG5 LENGTH {len(bits)} INPUT={v}")
+        logger.error("BAD MSG5 LENGTH {} FOR {}".format(len(bits), v))
         return None
 
     p1, f1 = sixbit_encode(bits[:360])
     p2, f2 = sixbit_encode(bits[360:])
     return p1, f1, p2, f2
 
-
 ###############################################################################
-# Batch builder
+# Batch output
 ###############################################################################
 
 def nmea_sentence(payload, fill):
-    body = f"AIVDM,1,1,,A,{payload},{fill}"
-    return f"!{body}*{nmea_checksum(body)}"
-
-
-def nmea_checksum(body):
-    c = 0
-    for ch in body:
-        c ^= ord(ch)
-    return f"{c:02X}"
-
+    body = "AIVDM,1,1,,A,{},{}".format(payload, fill)
+    return "!{}*{}".format(body, nmea_checksum(body))
 
 def vessels_to_nmea(vessels):
     out = []
+
     for v in vessels:
 
-        p1, f1 = encode_msg_type1(v)
-        if p1:
-            out.append(nmea_sentence(p1, f1))
+        # Msg 1
+        p, f = encode_msg_type1(v)
+        if p:
+            out.append(nmea_sentence(p, f))
 
-        msg5 = encode_msg_type5(v)
-        if msg5:
-            pa, fa, pb, fb = msg5
+        # Msg 5
+        res = encode_msg_type5(v)
+        if res:
+            p1, f1, p2, f2 = res
 
-            body1 = f"AIVDM,2,1,,A,{pa},{fa}"
-            out.append(f"!{body1}*{nmea_checksum(body1)}")
+            body1 = "AIVDM,2,1,,A,{},{}".format(p1, f1)
+            out.append("!{}*{}".format(body1, nmea_checksum(body1)))
 
-            body2 = f"AIVDM,2,2,,A,{pb},{fb}"
-            out.append(f"!{body2}*{nmea_checksum(body2)}")
+            body2 = "AIVDM,2,2,,A,{},{}".format(p2, f2)
+            out.append("!{}*{}".format(body2, nmea_checksum(body2)))
 
     return out
-``
