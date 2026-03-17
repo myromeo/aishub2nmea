@@ -24,7 +24,9 @@ def main():
             if len(vessels) == 0:
                 logger.warning("No vessels received! Check .env parameters and AISHub account.")
 
+            logger.debug("Encoding vessels to AIS NMEA sentences...")
             nmea = vessels_to_nmea(vessels)
+
             logger.info(f"Encoded {len(nmea)} AIS NMEA sentences")
 
             logger.debug("Sending AIS messages via UDP…")
@@ -33,10 +35,9 @@ def main():
             logger.info(f"Sent {len(nmea)} AIS messages to {Config.UDP_HOST}:{Config.UDP_PORT}")
 
         except Exception as e:
-            logger.error(f"Error occurred: {e}", exc_info=True)
+            logger.error(f"Unhandled error occurred: {e}", exc_info=True)
 
         time.sleep(Config.POLL_INTERVAL)
 
 if __name__ == "__main__":
     main()
-``
