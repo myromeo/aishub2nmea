@@ -53,12 +53,12 @@ def nmea_checksum(body):
     return "{:02X}".format(c)
 
 def encode_msg_type1(v):
-    # MATCHING XML KEYS: MMSI, LATITUDE, LONGITUDE
-    mmsi = safe_int(v.get("MMSI"), None)
+    # Reverting to lowercase based on your latest log sample
+    mmsi = safe_int(v.get("mmsi"), None)
     if not mmsi: return None, None
 
-    lat = safe_float(v.get("LATITUDE"))
-    lon = safe_float(v.get("LONGITUDE"))
+    lat = safe_float(v.get("lat"))
+    lon = safe_float(v.get("lon"))
     
     lat_ais = int(lat * 600000)
     lon_ais = int(lon * 600000)
@@ -67,22 +67,22 @@ def encode_msg_type1(v):
     bits += "{:06b}".format(1)
     bits += "00"
     bits += "{:030b}".format(mmsi)
-    bits += "{:04b}".format(safe_int(v.get("NAVSTAT"), 15))
-    bits += to_signed(safe_int(v.get("ROT"), -128), 8)
+    bits += "{:04b}".format(safe_int(v.get("navstat"), 15))
+    bits += to_signed(safe_int(v.get("rot"), -128), 8)
     
-    sog_val = int(safe_float(v.get("SOG"), 102.3) * 10)
+    sog_val = int(safe_float(v.get("sog"), 102.3) * 10)
     bits += "{:010b}".format(min(sog_val, 1023))
     
-    acc = safe_int(v.get("PAC"), 0) # Mapping PAC to Accuracy
+    acc = safe_int(v.get("pac"), 0)
     bits += "{:01b}".format(1 if acc else 0)
     
     bits += to_signed(lon_ais, 28)
     bits += to_signed(lat_ais, 27)
     
-    cog_val = int(safe_float(v.get("COG"), 360) * 10)
+    cog_val = int(safe_float(v.get("cog"), 360) * 10)
     bits += "{:012b}".format(min(cog_val, 3600))
     
-    bits += "{:09b}".format(safe_int(v.get("HEADING"), 511))
+    bits += "{:09b}".format(safe_int(v.get("heading"), 511))
     bits += "{:06b}".format(datetime.datetime.utcnow().second)
     bits += "00" # Maneuver
     bits += "0"  # Spare
@@ -93,8 +93,7 @@ def encode_msg_type1(v):
     return sixbit_encode(bits)
 
 def encode_msg_type5(v):
-    # MATCHING XML KEYS: MMSI, IMO, CALLSIGN, NAME, TYPE, etc.
-    mmsi = safe_int(v.get("MMSI"), None)
+    mmsi = safe_int(v.get("mmsi"), None)
     if not mmsi: return None
 
     bits = ""
@@ -102,16 +101,16 @@ def encode_msg_type5(v):
     bits += "00"
     bits += "{:030b}".format(mmsi)
     bits += "00"
-    bits += "{:030b}".format(safe_int(v.get("IMO"), 0))
-    bits += sixbit_ascii(v.get("CALLSIGN", ""), 7)
-    bits += sixbit_ascii(v.get("NAME", ""), 20)
-    bits += "{:08b}".format(safe_int(v.get("TYPE"), 0))
-    bits += "{:09b}".format(safe_int(v.get("A"), 0))
-    bits += "{:09b}".format(safe_int(v.get("B"), 0))
-    bits += "{:06b}".format(safe_int(v.get("C"), 0))
-    bits += "{:06b}".format(safe_int(v.get("D"), 0))
+    bits += "{:030b}".format(safe_int(v.get("imo"), 0))
+    bits += sixbit_ascii(v.get("callsign", ""), 7)
+    bits += sixbit_ascii(v.get("name", ""), 20)
+    bits += "{:08b}".format(safe_int(v.get("type"), 0))
+    bits += "{:09b}".format(safe_int(v.get("a"), 0))
+    bits += "{:09b}".format(safe_int(v.get("b"), 0))
+    bits += "{:06b}".format(safe_int(v.get("c"), 0))
+    bits += "{:06b}".format(safe_int(v.get("d"), 0))
     
-    eta = v.get("ETA", "00-00 00:00")
+    eta = v.get("eta", "00-00 00:00")
     try:
         month, day, hour, minute = int(eta[0:2]), int(eta[3:5]), int(eta[6:8]), int(eta[9:11])
     except:
@@ -121,8 +120,8 @@ def encode_msg_type5(v):
     bits += "{:05b}".format(day)
     bits += "{:05b}".format(hour)
     bits += "{:06b}".format(minute)
-    bits += "{:08b}".format(int(safe_float(v.get("DRAUGHT"), 0) * 10))
-    bits += sixbit_ascii(v.get("DEST", ""), 20)
+    bits += "{:08b}".format(int(safe_float(v.get("draught"), 0) * 10))
+    bits += sixbit_ascii(v.get("dest", ""), 20)
     bits += "0" # DTE
     bits += "0" # Spare
     
