@@ -25,31 +25,26 @@ def to_signed(value, bits):
 
 def sixbit_ascii(text, length):
     """
-    Encodes text to 6-bit AIS ASCII.
-    AIS Destination and Name fields MUST be padded to their full length 
-    BEFORE conversion to prevent bit-shifting 'gibberish'.
+    Encodes text to 6-bit AIS ASCII. 
+    Crucial: Must pad with spaces to the EXACT length to prevent bit-shifting.
     """
     if not text:
         text = ""
     
-    # 1. Clean the string: Uppercase and remove illegal AIS characters
-    text = str(text).upper()
-    
-    # 2. Force the length: Pad with spaces or truncate
-    # This is CRITICAL. If length is 20, the string must be exactly 20 chars.
-    text = text[:length].ljust(length, " ")
+    # 1. Clean and Pad: AIS uses uppercase and requires a fixed length.
+    # .ljust(length, " ") ensures the remaining bits are filled with 'space' (binary 0)
+    text = str(text).upper()[:length].ljust(length, " ")
     
     bits = ""
     for c in text:
         code = ord(c)
-        # AIS 6-bit Char Mapping
+        # AIS 6-bit mapping logic
         if 32 <= code <= 63:
-            val = code - 32    # Space through ?
+            val = code - 32
         elif 64 <= code <= 95:
-            val = code - 64    # @ through _
+            val = code - 64
         else:
-            val = 0            # Default to Space (@) for everything else
-            
+            val = 32 # Default to space
         bits += "{:06b}".format(val & 0x3F)
     return bits
 
@@ -109,8 +104,8 @@ def encode_msg_type1(v):
     
     bits = bits.ljust(168, "0")
     return sixbit_encode(bits)
-
 def encode_msg_type5(v):
+    # Ensure we use lowercase keys to match your recent log samples
     mmsi = safe_int(v.get("mmsi"), None)
     if not mmsi: return None
 
@@ -120,17 +115,25 @@ def encode_msg_type5(v):
     bits += "{:030b}".format(mmsi)
     bits += "00"
     bits += "{:030b}".format(safe_int(v.get("imo"), 0))
+    
+    # Mapping to correct keys from your parser
     bits += sixbit_ascii(v.get("callsign", ""), 7)
     bits += sixbit_ascii(v.get("name", ""), 20)
+    
     bits += "{:08b}".format(safe_int(v.get("type"), 0))
     bits += "{:09b}".format(safe_int(v.get("a"), 0))
     bits += "{:09b}".format(safe_int(v.get("b"), 0))
     bits += "{:06b}".format(safe_int(v.get("c"), 0))
     bits += "{:06b}".format(safe_int(v.get("d"), 0))
     
+    # ETA Handling
     eta = v.get("eta", "00-00 00:00")
     try:
-        month, day, hour, minute = int(eta[0:2]), int(eta[3:5]), int(eta[6:8]), int(eta[9:11])
+        # Example format: "03-22 10:00"
+        month = int(eta[0:2])
+        day = int(eta[3:5])
+        hour = int(eta[6:8])
+        minute = int(eta[9:11])
     except:
         month = day = hour = minute = 0
         
@@ -138,11 +141,17 @@ def encode_msg_type5(v):
     bits += "{:05b}".format(day)
     bits += "{:05b}".format(hour)
     bits += "{:06b}".format(minute)
+    
+    # Draught is 1/10 meters
     bits += "{:08b}".format(int(safe_float(v.get("draught"), 0) * 10))
+    
+    # DESTINATION - This is where the gibberish was likely happening
     bits += sixbit_ascii(v.get("dest", ""), 20)
+    
     bits += "0" # DTE
     bits += "0" # Spare
     
+    # Final check: Type 5 must be 424 bits
     bits = bits.ljust(424, "0")
     return bits
 
