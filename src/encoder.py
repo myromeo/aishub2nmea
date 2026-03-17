@@ -141,7 +141,7 @@ def vessels_to_nmea(vessels):
         # MSG 1
         p, f = encode_msg_type1(v)
         if p:
-            body = "AIVDM,1,1,,A,{},{}".format(p, f)
+            body = "AIVDM,1,1,1,A,{},{}".format(p, f)
             out.append(f"!{body}*{nmea_checksum(body)}\r\n")
 
         # MSG 5 (Multi-sentence)
