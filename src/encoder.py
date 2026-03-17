@@ -24,15 +24,33 @@ def to_signed(value, bits):
     return format(value, f"0{bits}b")
 
 def sixbit_ascii(text, length):
-    if not text: text = ""
-    text = str(text).upper()[:length].ljust(length)
+    """
+    Encodes text to 6-bit AIS ASCII.
+    AIS Destination and Name fields MUST be padded to their full length 
+    BEFORE conversion to prevent bit-shifting 'gibberish'.
+    """
+    if not text:
+        text = ""
+    
+    # 1. Clean the string: Uppercase and remove illegal AIS characters
+    text = str(text).upper()
+    
+    # 2. Force the length: Pad with spaces or truncate
+    # This is CRITICAL. If length is 20, the string must be exactly 20 chars.
+    text = text[:length].ljust(length, " ")
+    
     bits = ""
     for c in text:
         code = ord(c)
-        if 32 <= code <= 63: val = code - 32
-        elif 64 <= code <= 95: val = code - 64
-        else: val = 32
-        bits += "{:06b}".format(val)
+        # AIS 6-bit Char Mapping
+        if 32 <= code <= 63:
+            val = code - 32    # Space through ?
+        elif 64 <= code <= 95:
+            val = code - 64    # @ through _
+        else:
+            val = 0            # Default to Space (@) for everything else
+            
+        bits += "{:06b}".format(val & 0x3F)
     return bits
 
 def sixbit_encode(bitstring):
