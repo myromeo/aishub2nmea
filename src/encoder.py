@@ -4,7 +4,8 @@ import random
 
 logger = logging.getLogger("aishub2nmea")
 
-# Correct AIS 6-bit binary to ASCII map
+# CRITICAL: Correct AIS 6-bit "Armored" ASCII map for NMEA payloads
+# Value 0 is '@', Value 1 is 'A', ..., Value 63 is '?'
 AIS_CHARS = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_ !\"#$%&'()*+,-./0123456789:;<=>?"
 
 def safe_int(v, default=0):
@@ -29,11 +30,14 @@ def to_signed(value, bits):
     return format(value, f"0{bits}b")
 
 def sixbit_ascii(text, length):
-    if not text: text = ""
+    """Encodes text to 6-bit AIS ASCII (used inside the binary payload)."""
+    if not text:
+        text = ""
     text = text.upper()[:length].ljust(length)
     bits = ""
     for c in text:
         code = ord(c)
+        # AIS 6-bit ASCII mapping logic
         if 32 <= code <= 63:
             val = code - 32
         elif 64 <= code <= 95:
@@ -44,13 +48,14 @@ def sixbit_ascii(text, length):
     return bits
 
 def sixbit_encode(bitstring):
-    """Binary → 6-bit AIS ASCII with proper fill bit calculation."""
+    """Converts a binary string to NMEA Armored ASCII."""
     fill = (6 - (len(bitstring) % 6)) % 6
     bitstring += "0" * fill
     
     payload = ""
     for i in range(0, len(bitstring), 6):
-        payload += AIS_CHARS[int(bitstring[i:i+6], 2)]
+        val = int(bitstring[i:i+6], 2)
+        payload += AIS_CHARS[val]
     return payload, fill
 
 def nmea_checksum(body):
@@ -60,14 +65,13 @@ def nmea_checksum(body):
     return "{:02X}".format(c)
 
 def encode_msg_type1(v):
-    # Mapping to lowercase keys from parser.py
     mmsi = safe_int(v.get("mmsi"), None)
     if not mmsi: return None, None
 
     lat = safe_float(v.get("lat"))
     lon = safe_float(v.get("lon"))
     
-    # AIS uses 1/10000 minute precision
+    # AIS uses 1/600000 degree precision (1/10000 minute)
     lat_ais = int(lat * 600000)
     lon_ais = int(lon * 600000)
 
@@ -82,7 +86,7 @@ def encode_msg_type1(v):
     bits += "{:010b}".format(min(sog_val, 1023))
     
     acc = safe_int(v.get("accuracy"), 0)
-    bits += "{:01b}".format(1 if acc else 0)             # Accuracy bit
+    bits += "{:01b}".format(1 if acc else 0)
     
     bits += to_signed(lon_ais, 28)
     bits += to_signed(lat_ais, 27)
@@ -97,6 +101,7 @@ def encode_msg_type1(v):
     bits += "0"                                          # RAIM
     bits += "0" * 19                                     # Radio
     
+    # Type 1 must be exactly 168 bits
     bits = bits.ljust(168, "0")
     return sixbit_encode(bits)
 
@@ -133,31 +138,40 @@ def encode_msg_type5(v):
     bits += "0"                                          # DTE
     bits += "0"                                          # Spare
     
+    # Type 5 must be exactly 424 bits
     bits = bits.ljust(424, "0")
     return bits
 
 def vessels_to_nmea(vessels):
     out = []
+    # Using a simple counter for Sequence ID to keep Part 1/2 linked
+    seq_counter = 0
+
     for v in vessels:
-        # MSG 1
+        # --- Encode Type 1 (Position) ---
         p, f = encode_msg_type1(v)
         if p:
-            body = "AIVDM,1,1,1,A,{},{}".format(p, f)
+            body = f"AIVDM,1,1,,A,{p},{f}"
             out.append(f"!{body}*{nmea_checksum(body)}\r\n")
 
-        # MSG 5 (Multi-sentence)
+        # --- Encode Type 5 (Static Data) ---
         bits5 = encode_msg_type5(v)
         if bits5:
-            # Type 5 standard split: Part 1 = 354 bits, Part 2 = 70 bits
-            p1, f1 = sixbit_encode(bits5[:354])
-            p2, f2 = sixbit_encode(bits5[354:])
+            # 424 bits total. 
+            # Part 1: First 57 characters (342 bits). Fill = 0.
+            # Part 2: Remaining 82 bits. 82 bits / 6 = 13.6 -> 14 chars. Fill = 2.
+            p1, _ = sixbit_encode(bits5[:342])
+            p2, _ = sixbit_encode(bits5[342:])
             
-            # Sequence ID to link the two sentences
-            seq_id = random.randint(0, 9)
+            seq_id = seq_counter % 10
+            seq_counter += 1
             
-            b1 = "AIVDM,2,1,{},A,{},{}".format(seq_id, p1, f1)
-            b2 = "AIVDM,2,2,{},A,{},{}".format(seq_id, p2, f2)
-            
+            # Sentence 1 of 2
+            b1 = f"AIVDM,2,1,{seq_id},A,{p1},0"
             out.append(f"!{b1}*{nmea_checksum(b1)}\r\n")
+            
+            # Sentence 2 of 2
+            b2 = f"AIVDM,2,2,{seq_id},A,{p2},2"
             out.append(f"!{b2}*{nmea_checksum(b2)}\r\n")
+            
     return out
