@@ -3,44 +3,50 @@ import logging
 
 logger = logging.getLogger("aishub2nmea")
 
-
-def parse_aishub_xml(xml_string: str):
+def parse_aishub_xml(xml_string):
     try:
         root = ET.fromstring(xml_string)
-    except Exception:
-        logger.error("Failed to parse AISHub XML", exc_info=True)
+    except Exception as e:
+        logger.error("Failed to parse XML", exc_info=True)
         return []
 
     vessels = []
 
     for v in root.findall("vessel"):
+
         try:
-            lat_raw = v.attrib.get("LATITUDE")
-            lon_raw = v.attrib.get("LONGITUDE")
+            entry = {
+                "mmsi": v.attrib.get("MMSI"),
 
-            lat = float(lat_raw) / 1_000_000 if lat_raw else None
-            lon = float(lon_raw) / 1_000_000 if lon_raw else None
+                # Human-readable degrees
+                "lat": v.attrib.get("LATITUDE"),
+                "lon": v.attrib.get("LONGITUDE"),
 
-            if lat is None or lon is None or lat == 0 or lon == 0:
-                logger.warning(f"Skipping vessel with invalid coords: MMSI={v.attrib.get('MMSI')}")
-                continue
+                # Movement
+                "sog": v.attrib.get("SOG"),
+                "cog": v.attrib.get("COG"),
+                "heading": v.attrib.get("HEADING"),
+                "navstat": v.attrib.get("NAVSTAT"),
+                "rot": v.attrib.get("ROT"),
+                "accuracy": v.attrib.get("PAC"),  # 0/1
 
-            vessels.append(
-                {
-                    "mmsi": v.attrib.get("MMSI"),
-                    "lat": lat,
-                    "lon": lon,
-                    "sog": float(v.attrib.get("SOG")) / 10,
-                    "cog": float(v.attrib.get("COG")) / 10,
-                    "heading": int(v.attrib.get("HEADING")),
-                    "navstat": int(v.attrib.get("NAVSTAT")),
-                    "rot": int(v.attrib.get("ROT")),
-                    "accuracy": int(v.attrib.get("PAC", "0")),
-                }
-            )
+                # Static / voyage — Msg 5 fields
+                "imo": v.attrib.get("IMO"),
+                "name": v.attrib.get("NAME"),
+                "callsign": v.attrib.get("CALLSIGN"),
+                "type": v.attrib.get("TYPE"),
+                "A": v.attrib.get("A"),
+                "B": v.attrib.get("B"),
+                "C": v.attrib.get("C"),
+                "D": v.attrib.get("D"),
+                "draught": v.attrib.get("DRAUGHT"),
+                "dest": v.attrib.get("DEST"),
+                "eta": v.attrib.get("ETA"),
+            }
+
+            vessels.append(entry)
 
         except Exception:
-            logger.error(f"Failed to parse vessel record: {v.attrib}", exc_info=True)
+            logger.error("Failed to parse vessel entry", exc_info=True)
 
-    logger.info(f"Parsed {len(vessels)} valid vessels")
     return vessels
