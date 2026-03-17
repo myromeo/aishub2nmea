@@ -2,35 +2,32 @@ import os
 from urllib.parse import urlencode
 from dotenv import load_dotenv
 
-# Do not overwrite environment variables provided by Portainer
+# Do not overwrite environment variables provided by Docker/Portainer
 load_dotenv(override=False)
 
-
 class Config:
-    # AISHub parameters
+    # --- AISHub parameters (Defaults aligned with your working Compose) ---
     USERNAME = os.getenv("AIS_USERNAME")
-    FORMAT = os.getenv("AIS_FORMAT", "0")
-    OUTPUT = os.getenv("AIS_OUTPUT", "xml")
-    COMPRESS = os.getenv("AIS_COMPRESS", "0")
+    FORMAT   = os.getenv("AIS_FORMAT", "1")   # Default to Human Readable
+    OUTPUT   = os.getenv("AIS_OUTPUT", "xml") # Always XML
+    COMPRESS = os.getenv("AIS_COMPRESS", "0") # No compression
 
-    LAT_MIN = os.getenv("LAT_MIN", "-90")
-    LAT_MAX = os.getenv("LAT_MAX", "90")
-    LON_MIN = os.getenv("LON_MIN", "-180")
-    LON_MAX = os.getenv("LON_MAX", "180")
+    # --- Bounding Box (Default: English Channel Focus) ---
+    LAT_MIN = os.getenv("LAT_MIN", "48.5")
+    LAT_MAX = os.getenv("LAT_MAX", "51.5")
+    LON_MIN = os.getenv("LON_MIN", "-6.5")
+    LON_MAX = os.getenv("LON_MAX", "2.5")
 
+    # --- Filtering (Usually empty) ---
     MMSI = os.getenv("MMSI", "")
-    IMO = os.getenv("IMO", "")
-    INTERVAL = os.getenv("INTERVAL", "")
+    IMO  = os.getenv("IMO", "")
+    
+    # --- Polling (Default to 60s) ---
+    POLL_INTERVAL = int(os.getenv("INTERVAL", "60"))
 
-    # AIS streaming parameters
-    MESSAGES_PER_SECOND = float(os.getenv("MESSAGES_PER_SECOND", "5"))
-
-    # Polling interval
-    POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "60"))
-
-    # UDP Output
-    UDP_HOST = os.getenv("UDP_HOST", "127.0.0.1")
-    UDP_PORT = int(os.getenv("UDP_PORT", "10110"))
+    # --- UDP Output (Default to your shipfeeder setup) ---
+    UDP_HOST = os.getenv("UDP_HOST", "shipfeeder")
+    UDP_PORT = int(os.getenv("UDP_PORT", "50001"))
 
     @staticmethod
     def build_url():
@@ -47,10 +44,11 @@ class Config:
             "lonmax": Config.LON_MAX,
             "mmsi": Config.MMSI,
             "imo": Config.IMO,
-            "interval": Config.INTERVAL,
+            # We use interval=60 for the API call to match the poll rate
+            "interval": Config.POLL_INTERVAL, 
         }
 
-        # remove empty params
-        clean = {k: v for k, v in params.items() if v and str(v).strip() != ""}
+        # Remove empty or whitespace params to keep the URL clean
+        clean = {k: v for k, v in params.items() if str(v).strip()}
 
         return base + urlencode(clean)
