@@ -2,7 +2,7 @@ import os
 from urllib.parse import urlencode
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=False)
 
 class Config:
 
