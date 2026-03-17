@@ -1,9 +1,26 @@
 version: "3.9"
 
 services:
-  ais-streamer:
+  aishub2nmea:
     build: .
-    container_name: ais-streamer
+    container_name: aishub2nmea
     restart: unless-stopped
+
+    environment:
+      AIS_USERNAME: ${AIS_USERNAME}
+      AIS_FORMAT: ${AIS_FORMAT}
+      AIS_OUTPUT: ${AIS_OUTPUT}
+      AIS_COMPRESS: ${AIS_COMPRESS}
+      LAT_MIN: ${LAT_MIN}
+      LAT_MAX: ${LAT_MAX}
+      LON_MIN: ${LON_MIN}
+      LON_MAX: ${LON_MAX}
+      MMSI: ${MMSI}
+      IMO: ${IMO}
+      INTERVAL: ${INTERVAL}
+      POLL_INTERVAL: ${POLL_INTERVAL}
+      UDP_HOST: ${UDP_HOST}
+      UDP_PORT: ${UDP_PORT}
+
     ports:
       - "10110:10110/udp"
