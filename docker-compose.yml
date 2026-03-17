@@ -1,1 +1,10 @@
+version: "3.9"
 
+services:
+  ais-streamer:
+    build: .
+    container_name: ais-streamer
+    env_file: .env
+    restart: unless-stopped
+    ports:
+      - "10110:10110/udp"
