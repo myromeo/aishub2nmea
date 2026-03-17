@@ -35,7 +35,6 @@ def main():
             nmea = vessels_to_nmea(vessels)
             logger.info(f"Encoded {len(nmea)} AIS messages")
 
-            logger.info(f"Streaming AIS messages at {Config.MESSAGES_PER_SECOND} msg/sec")
             stream_udp_realtime(
                 nmea_list=nmea,
                 host=Config.UDP_HOST,
