@@ -134,13 +134,11 @@ def encode_msg_type5(v):
 
 def vessels_to_nmea(vessels):
     out = []
-    for v in vessels:
-        # MSG 1 - Fix keys to lowercase
-        # Use v.get("lat") and v.get("lon") in encode_msg_type1 as well!
-        p, f = encode_msg_type1(v) 
-        if p:
-            body = "AIVDM,1,1,,A,{},{}".format(p, f)
-            out.append("!{}*{}\r\n".format(body, nmea_checksum(body))) # Added \r\n
+for v in vessels:
+    p, f = encode_msg_type1(v)
+    if p is not None:  # Check both p and f aren't None
+        body = "AIVDM,1,1,,A,{},{}".format(p, f)
+        out.append("!{}*{}\r\n".format(body, nmea_checksum(body)))
 
         # MSG 5
         bits5 = encode_msg_type5(v)
