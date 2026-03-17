@@ -4,23 +4,39 @@ from aishub import fetch_ais_data
 from parser import parse_aishub_xml
 from encoder import vessels_to_nmea
 from forwarder import send_udp
+from logger import setup_logging
+
+logger = setup_logging()
 
 def main():
-    print("AIS Streamer starting...")
+    logger.info("AIS Streamer starting...")
 
     while True:
         try:
+            logger.debug("Requesting AIS data...")
             xml = fetch_ais_data()
-            vessels = parse_aishub_xml(xml)
-            nmea = vessels_to_nmea(vessels)
 
+            logger.debug("Parsing XML data...")
+            vessels = parse_aishub_xml(xml)
+
+            logger.info(f"Parsed {len(vessels)} vessel positions")
+
+            if len(vessels) == 0:
+                logger.warning("No vessels received! Check .env parameters and AISHub account.")
+
+            nmea = vessels_to_nmea(vessels)
+            logger.info(f"Encoded {len(nmea)} AIS NMEA sentences")
+
+            logger.debug("Sending AIS messages via UDP…")
             send_udp(nmea, Config.UDP_HOST, Config.UDP_PORT)
-            print(f"Sent {len(nmea)} AIS messages")
+
+            logger.info(f"Sent {len(nmea)} AIS messages to {Config.UDP_HOST}:{Config.UDP_PORT}")
 
         except Exception as e:
-            print(f"Error: {e}")
+            logger.error(f"Error occurred: {e}", exc_info=True)
 
         time.sleep(Config.POLL_INTERVAL)
 
 if __name__ == "__main__":
     main()
+``
