@@ -1,7 +1,3 @@
-This is the final, comprehensive `README.md` that perfectly balances your minimalist requirements with the technical documentation provided by AISHub.
-
----
-
 # aishub2nmea 🚢
 
 **aishub2nmea** is a high-performance bridge service designed for maritime data enthusiasts. It fetches live vessel positions from the **AISHub Web Service**, converts the raw data into valid **NMEA !AIVDM** sentences, and streams them via UDP to your local AIS decoder (such as AIS-catcher, PilotLogic, or OpenCPN).
@@ -81,5 +77,3 @@ To allow `ais-forwarder` to communicate with your AIS receiver, they must share 
 * **Auto-Padding:** The encoder automatically handles 6-bit alignment and padding for NMEA sentences.
 
 ---
-
-**Everything looks solid! Would you like me to generate a simple `.dockerignore` file to ensure your `.git` and `.env` folders aren't accidentally bundled into the public image?**
