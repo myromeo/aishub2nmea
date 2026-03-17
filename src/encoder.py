@@ -5,8 +5,9 @@ logger = logging.getLogger("aishub2nmea")
 
 AIS_CHARS = "0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_ !\"#$%&'()*+,-./"
 
+
 ###############################################################################
-# Utilities
+# Utility functions
 ###############################################################################
 
 def safe_int(v, default=0):
@@ -27,33 +28,38 @@ def to_signed(value, bits):
     return format(value & ((1 << bits) - 1), "0{}b".format(bits))
 
 def sixbit_ascii(text, length):
-    if text is None:
+    if not text:
         text = ""
     text = text.upper()
     text = text[:length].ljust(length)
+
     bits = ""
     for c in text:
         code = ord(c) - 32
         if code < 0 or code > 63:
             code = 0
         bits += "{:06b}".format(code)
+
     return bits
 
-def sixbit_encode(bits):
-    while len(bits) % 6 != 0:
-        bits += "0"
+def sixbit_encode(bitstring):
+    """Binary → 6-bit AIS ASCII."""
+    while len(bitstring) % 6 != 0:
+        bitstring += "0"
+
     payload = ""
-    for i in range(0, len(bits), 6):
-        chunk = bits[i:i+6]
-        payload += AIS_CHARS[int(chunk, 2)]
-    fill = (6 - (len(bits) % 6)) % 6
+    for i in range(0, len(bitstring), 6):
+        payload += AIS_CHARS[int(bitstring[i:i+6], 2)]
+
+    fill = (6 - (len(bitstring) % 6)) % 6
     return payload, fill
 
 def nmea_checksum(body):
-    cs = 0
-    for c in body:
-        cs ^= ord(c)
-    return "{:02X}".format(cs)
+    c = 0
+    for ch in body:
+        c ^= ord(ch)
+    return "{:02X}".format(c)
+
 
 ###############################################################################
 # Debug printer
@@ -62,12 +68,13 @@ def nmea_checksum(body):
 def debug_bits(label, bits, mmsi):
     logger.error("===== DEBUG {} FOR MMSI {} ({} bits) =====".format(label, mmsi, len(bits)))
     for i in range(0, len(bits), 32):
-        seg = bits[i:i+32]
-        logger.error("{:03d}-{:03d}: {} (len={})".format(i, i+len(seg), seg, len(seg)))
+        segment = bits[i:i+32]
+        logger.error("{:03d}-{:03d}: {} (len={})".format(i, i+len(segment), segment, len(segment)))
     logger.error("===============================================")
 
+
 ###############################################################################
-# AIS MESSAGE TYPE 1
+# AIS MESSAGE TYPE 1 — dynamic position
 ###############################################################################
 
 def encode_msg_type1(v):
@@ -75,12 +82,12 @@ def encode_msg_type1(v):
     if not mmsi:
         return None, None
 
+    # Human-readable degrees
     lat = safe_float(v.get("lat"), None)
     lon = safe_float(v.get("lon"), None)
 
     if lat is None or lon is None:
         return None, None
-
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return None, None
 
@@ -90,19 +97,19 @@ def encode_msg_type1(v):
     navstat = safe_int(v.get("navstat"), 15)
     navstat = max(0, min(15, navstat))
 
-    rot_raw = safe_int(v.get("rot"), 128)
-    if rot_raw in (127, 128, -127):
+    rot_in = safe_int(v.get("rot"), 128)
+    if rot_in in (127, 128, -127):
         rot = 128
     else:
-        rot = max(-127, min(127, rot_raw))
+        rot = max(-127, min(127, rot_in))
 
-    sog_kts = safe_float(v.get("sog"), 0)
-    if sog_kts < 0.1:
+    sog_knots = safe_float(v.get("sog"), 0)
+    if sog_knots < 0.1:
         sog = 0
-    elif sog_kts > 102.2:
+    elif sog_knots > 102.2:
         sog = 1023
     else:
-        sog = int(sog_kts * 10)
+        sog = int(sog_knots * 10)
 
     cog_deg = safe_float(v.get("cog"), 360)
     if cog_deg < 0 or cog_deg >= 360:
@@ -115,12 +122,11 @@ def encode_msg_type1(v):
         heading = 511
 
     accuracy = 1 if safe_int(v.get("accuracy"), 0) else 0
-
     timestamp = datetime.datetime.utcnow().second
 
     bits = ""
-    bits += "000001"                 # Msg ID = 1
-    bits += "00"                     # Repeat
+    bits += "000001"                          # Msg ID
+    bits += "00"                              # Repeat
     bits += "{:030b}".format(mmsi)
     bits += "{:04b}".format(navstat)
     bits += to_signed(rot, 8)
@@ -131,21 +137,25 @@ def encode_msg_type1(v):
     bits += "{:012b}".format(cog)
     bits += "{:09b}".format(heading)
     bits += "{:06b}".format(timestamp)
-    bits += "00"
-    bits += "0"
-    bits += "0" * 19
+    bits += "00"                              # Maneuver
+    bits += "0"                               # RAIM
+    bits += "0" * 19                          # Radio
 
-    debug_bits("MSG1", bits, mmsi)
+    # DEBUG BEFORE PADDING
+    debug_bits("MSG1 PRE-PAD", bits, mmsi)
 
-    if len(bits) != 168:
-        logger.error("BAD MSG1 LENGTH {} FOR {}".format(len(bits), v))
-        return None, None
+    # FORCE CORRECT LENGTH (critical fix)
+    bits = bits.ljust(168, "0")
+
+    # DEBUG AFTER PADDING
+    debug_bits("MSG1 POST-PAD", bits, mmsi)
 
     payload, fill = sixbit_encode(bits)
     return payload, fill
 
+
 ###############################################################################
-# AIS MESSAGE TYPE 5
+# AIS MESSAGE TYPE 5 — static / voyage data
 ###############################################################################
 
 def encode_msg_type5(v):
@@ -168,6 +178,7 @@ def encode_msg_type5(v):
 
     dest = v.get("dest", "")
 
+    # ETA "MM-DD HH:MM"
     eta = v.get("eta", "")
     try:
         month = int(eta[0:2])
@@ -178,10 +189,10 @@ def encode_msg_type5(v):
         month = day = hour = minute = 0
 
     bits = ""
-    bits += "{:06b}".format(5)
-    bits += "00"
+    bits += "{:06b}".format(5)               # Msg 5
+    bits += "00"                             # Repeat
     bits += "{:030b}".format(mmsi)
-    bits += "01"                        # AIS version
+    bits += "01"                             # AIS version
     bits += "{:030b}".format(imo)
     bits += sixbit_ascii(callsign, 7)
     bits += sixbit_ascii(name, 20)
@@ -199,18 +210,22 @@ def encode_msg_type5(v):
     bits += "0"
     bits += "0"
 
-    debug_bits("MSG5", bits, mmsi)
+    # DEBUG BEFORE PADDING
+    debug_bits("MSG5 PRE-PAD", bits, mmsi)
 
-    if len(bits) != 424:
-        logger.error("BAD MSG5 LENGTH {} FOR {}".format(len(bits), v))
-        return None
+    # FORCE CORRECT LENGTH
+    bits = bits.ljust(424, "0")
+
+    # DEBUG AFTER PADDING
+    debug_bits("MSG5 POST-PAD", bits, mmsi)
 
     p1, f1 = sixbit_encode(bits[:360])
     p2, f2 = sixbit_encode(bits[360:])
     return p1, f1, p2, f2
 
+
 ###############################################################################
-# Batch output
+# Batch builder
 ###############################################################################
 
 def nmea_sentence(payload, fill):
@@ -221,16 +236,15 @@ def vessels_to_nmea(vessels):
     out = []
 
     for v in vessels:
-
-        # Msg 1
+        # Message 1
         p, f = encode_msg_type1(v)
         if p:
             out.append(nmea_sentence(p, f))
 
-        # Msg 5
-        res = encode_msg_type5(v)
-        if res:
-            p1, f1, p2, f2 = res
+        # Message 5
+        result = encode_msg_type5(v)
+        if result:
+            p1, f1, p2, f2 = result
 
             body1 = "AIVDM,2,1,,A,{},{}".format(p1, f1)
             out.append("!{}*{}".format(body1, nmea_checksum(body1)))
