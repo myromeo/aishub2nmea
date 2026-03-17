@@ -5,7 +5,7 @@ import random
 logger = logging.getLogger("aishub2nmea")
 
 # Correct AIS 6-bit binary to ASCII map
-AIS_CHARS = "0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_ !\"#$%&'()*+,-./"
+AIS_CHARS = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_ !\"#$%&'()*+,-./0123456789:;<=>?"
 
 def safe_int(v, default=0):
     try:
@@ -29,17 +29,18 @@ def to_signed(value, bits):
     return format(value, f"0{bits}b")
 
 def sixbit_ascii(text, length):
-    if not text:
-        text = ""
-    text = text.upper()
-    text = text[:length].ljust(length)
+    if not text: text = ""
+    text = text.upper()[:length].ljust(length)
     bits = ""
     for c in text:
-        # AIS 6-bit ASCII conversion
-        code = ord(c) - 32
-        if code < 0 or code > 63:
-            code = 0
-        bits += "{:06b}".format(code)
+        code = ord(c)
+        if 32 <= code <= 63:
+            val = code - 32
+        elif 64 <= code <= 95:
+            val = code - 64
+        else:
+            val = 32 # Default to space
+        bits += "{:06b}".format(val)
     return bits
 
 def sixbit_encode(bitstring):
