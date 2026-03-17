@@ -4,174 +4,136 @@ import datetime
 logger = logging.getLogger("aishub2nmea")
 
 def safe_int(v, default=0):
-    try:
-        if v is None: return default
-        return int(float(v))
-    except:
-        return default
+    try: return int(float(v)) if v is not None else default
+    except: return default
 
 def safe_float(v, default=0.0):
-    try:
-        if v is None: return default
-        return float(v)
-    except:
-        return default
+    try: return float(v) if v is not None else default
+    except: return default
 
 def to_signed(value, bits):
-    if value < 0:
-        value = (1 << bits) + value
+    if value < 0: value = (1 << bits) + value
     value = max(0, min(value, (1 << bits) - 1))
     return format(value, f"0{bits}b")
 
 def sixbit_ascii(text, length):
     """
-    Encodes text to 6-bit AIS ASCII. 
-    Crucial: Must pad with spaces to the EXACT length to prevent bit-shifting.
+    Standard AIS 6-bit ASCII. 
+    @ = 0, A = 1 ... Z = 26.
+    Must be EXACTLY 'length' * 6 bits.
     """
-    if not text:
-        text = ""
-    
-    # 1. Clean and Pad: AIS uses uppercase and requires a fixed length.
-    # .ljust(length, " ") ensures the remaining bits are filled with 'space' (binary 0)
+    if not text: text = ""
+    # Clean and Pad to exactly 'length' characters
     text = str(text).upper()[:length].ljust(length, " ")
     
     bits = ""
     for c in text:
         code = ord(c)
-        # AIS 6-bit mapping logic
-        if 32 <= code <= 63:
-            val = code - 32
-        elif 64 <= code <= 95:
-            val = code - 64
-        else:
-            val = 32 # Default to space
-        bits += "{:06b}".format(val & 0x3F)
+        if 32 <= code <= 63: val = code - 32
+        elif 64 <= code <= 95: val = code - 64
+        else: val = 0 # Default to Space (@)
+        bits += format(val & 0x3F, "06b")
     return bits
 
 def sixbit_encode(bitstring):
+    """NMEA Armoring logic (The 48/56 jump)"""
     fill = (6 - (len(bitstring) % 6)) % 6
     bitstring += "0" * fill
     payload = ""
     for i in range(0, len(bitstring), 6):
         val = int(bitstring[i:i+6], 2)
-        if val < 40: char_code = val + 48
-        else: char_code = val + 56
+        char_code = val + 48 if val < 40 else val + 56
         payload += chr(char_code)
     return payload, fill
 
 def nmea_checksum(body):
     c = 0
-    for ch in body:
-        c ^= ord(ch)
+    for ch in body: c ^= ord(ch)
     return "{:02X}".format(c)
 
 def encode_msg_type1(v):
-    # Reverting to lowercase based on your latest log sample
     mmsi = safe_int(v.get("mmsi"), None)
     if not mmsi: return None, None
 
-    lat = safe_float(v.get("lat"))
-    lon = safe_float(v.get("lon"))
-    
-    lat_ais = int(lat * 600000)
-    lon_ais = int(lon * 600000)
+    lat_ais = int(safe_float(v.get("lat")) * 600000)
+    lon_ais = int(safe_float(v.get("lon")) * 600000)
 
-    bits = ""
-    bits += "{:06b}".format(1)
-    bits += "00"
-    bits += "{:030b}".format(mmsi)
-    bits += "{:04b}".format(safe_int(v.get("navstat"), 15))
+    bits =  format(1, "06b")                          # Msg ID
+    bits += "00"                                      # Repeat
+    bits += format(mmsi, "030b")                      # MMSI
+    bits += format(safe_int(v.get("navstat"), 15), "04b")
     bits += to_signed(safe_int(v.get("rot"), -128), 8)
-    
-    sog_val = int(safe_float(v.get("sog"), 102.3) * 10)
-    bits += "{:010b}".format(min(sog_val, 1023))
-    
-    acc = safe_int(v.get("pac"), 0)
-    bits += "{:01b}".format(1 if acc else 0)
-    
+    bits += format(min(int(safe_float(v.get("sog")) * 10), 1023), "010b")
+    bits += format(1 if safe_int(v.get("pac")) else 0, "01b") # Accuracy
     bits += to_signed(lon_ais, 28)
     bits += to_signed(lat_ais, 27)
+    bits += format(min(int(safe_float(v.get("cog")) * 10), 3600), "012b")
+    bits += format(safe_int(v.get("heading"), 511), "09b")
+    bits += format(datetime.datetime.utcnow().second, "06b")
+    bits += "0000"                                    # Maneuver(2) + Spare(1) + RAIM(1)
+    bits += "0" * 19                                  # Radio
     
-    cog_val = int(safe_float(v.get("cog"), 360) * 10)
-    bits += "{:012b}".format(min(cog_val, 3600))
-    
-    bits += "{:09b}".format(safe_int(v.get("heading"), 511))
-    bits += "{:06b}".format(datetime.datetime.utcnow().second)
-    bits += "00" # Maneuver
-    bits += "0"  # Spare
-    bits += "0"  # RAIM
-    bits += "0" * 19 # Radio
-    
-    bits = bits.ljust(168, "0")
     return sixbit_encode(bits)
+
 def encode_msg_type5(v):
-    # Ensure we use lowercase keys to match your recent log samples
     mmsi = safe_int(v.get("mmsi"), None)
     if not mmsi: return None
 
-    bits = ""
-    bits += "{:06b}".format(5)
-    bits += "00"
-    bits += "{:030b}".format(mmsi)
-    bits += "00"
-    bits += "{:030b}".format(safe_int(v.get("imo"), 0))
+    # BUILDING BITS - TOTAL MUST BE 424
+    bits =  format(5, "06b")                          # 0-5
+    bits += "00"                                      # 6-7
+    bits += format(mmsi, "030b")                      # 8-37
+    bits += "00"                                      # 38-39 (AIS Version)
+    bits += format(safe_int(v.get("imo"), 0), "030b") # 40-69
+    bits += sixbit_ascii(v.get("callsign"), 7)        # 70-111
+    bits += sixbit_ascii(v.get("name"), 20)           # 112-231
+    bits += format(safe_int(v.get("type"), 0), "08b") # 232-239
+    bits += format(safe_int(v.get("a"), 0), "09b")    # 240-248
+    bits += format(safe_int(v.get("b"), 0), "09b")    # 249-257
+    bits += format(safe_int(v.get("c"), 0), "06b")    # 258-263
+    bits += format(safe_int(v.get("d"), 0), "06b")    # 264-269
+    bits += "0000"                                    # 270-273 (Fix Type - Spare)
     
-    # Mapping to correct keys from your parser
-    bits += sixbit_ascii(v.get("callsign", ""), 7)
-    bits += sixbit_ascii(v.get("name", ""), 20)
-    
-    bits += "{:08b}".format(safe_int(v.get("type"), 0))
-    bits += "{:09b}".format(safe_int(v.get("a"), 0))
-    bits += "{:09b}".format(safe_int(v.get("b"), 0))
-    bits += "{:06b}".format(safe_int(v.get("c"), 0))
-    bits += "{:06b}".format(safe_int(v.get("d"), 0))
-    
-    # ETA Handling
+    # ETA (20 bits total)
     eta = v.get("eta", "00-00 00:00")
     try:
-        # Example format: "03-22 10:00"
-        month = int(eta[0:2])
-        day = int(eta[3:5])
-        hour = int(eta[6:8])
-        minute = int(eta[9:11])
-    except:
-        month = day = hour = minute = 0
-        
-    bits += "{:04b}".format(month)
-    bits += "{:05b}".format(day)
-    bits += "{:05b}".format(hour)
-    bits += "{:06b}".format(minute)
+        month, day, hour, minute = int(eta[0:2]), int(eta[3:5]), int(eta[6:8]), int(eta[9:11])
+    except: month = day = hour = minute = 0
+    bits += format(month, "04b") + format(day, "05b") + format(hour, "05b") + format(minute, "06b")
     
-    # Draught is 1/10 meters
-    bits += "{:08b}".format(int(safe_float(v.get("draught"), 0) * 10))
+    # Draught (8 bits)
+    bits += format(int(safe_float(v.get("draught")) * 10), "08b")
     
-    # DESTINATION - This is where the gibberish was likely happening
-    bits += sixbit_ascii(v.get("dest", ""), 20)
+    # Destination (120 bits)
+    bits += sixbit_ascii(v.get("dest"), 20)
     
-    bits += "0" # DTE
-    bits += "0" # Spare
-    
-    # Final check: Type 5 must be 424 bits
-    bits = bits.ljust(424, "0")
-    return bits
+    bits += "0"                                       # DTE (1 bit)
+    bits += "0"                                       # Spare (1 bit)
+
+    # FINAL TOTAL: 424 bits
+    return bits.ljust(424, "0")
 
 def vessels_to_nmea(vessels):
     out = []
     seq_counter = 0
     for v in vessels:
+        # Type 1
         p, f = encode_msg_type1(v)
         if p:
             body = f"AIVDM,1,1,,A,{p},{f}"
             out.append(f"!{body}*{nmea_checksum(body)}\r\n")
 
-        bits5 = encode_msg_type5(v)
-        if bits5:
-            this_seq_id = seq_counter % 10
+        # Type 5
+        raw5 = encode_msg_type5(v)
+        if raw5:
+            sid = seq_counter % 10
             seq_counter += 1
-            p1, _ = sixbit_encode(bits5[:342])
-            p2, _ = sixbit_encode(bits5[342:])
-            b1 = f"AIVDM,2,1,{this_seq_id},A,{p1},0"
+            # Exact split for 424 bit Type 5: 
+            # Part 1: 57 chars (342 bits), Part 2: 14 chars (82 bits total w/ padding)
+            p1, _ = sixbit_encode(raw5[:342])
+            p2, _ = sixbit_encode(raw5[342:])
+            b1 = f"AIVDM,2,1,{sid},A,{p1},0"
+            b2 = f"AIVDM,2,2,{sid},A,{p2},2"
             out.append(f"!{b1}*{nmea_checksum(b1)}\r\n")
-            b2 = f"AIVDM,2,2,{this_seq_id},A,{p2},2"
             out.append(f"!{b2}*{nmea_checksum(b2)}\r\n")
     return out
