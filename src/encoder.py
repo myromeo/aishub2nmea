@@ -84,25 +84,24 @@ def encode_msg_type1(v):
     return sixbit_encode(bits)
 
 def encode_msg_type5(v):
-    mmsi = safe_int(v.get("MMSI"), None)
+    mmsi = safe_int(v.get("mmsi"), None) # Changed to lowercase to match parser
     if not mmsi: return None
 
     bits = ""
     bits += "{:06b}".format(5)
     bits += "00"
     bits += "{:030b}".format(mmsi)
-    bits += "00"                               # AIS version
-    bits += "{:030b}".format(safe_int(v.get("IMO"), 0))
-    bits += sixbit_ascii(v.get("CALLSIGN", ""), 7)
-    bits += sixbit_ascii(v.get("NAME", ""), 20)
-    bits += "{:08b}".format(safe_int(v.get("TYPE"), 0))
+    bits += "00"
+    bits += "{:030b}".format(safe_int(v.get("imo"), 0))
+    bits += sixbit_ascii(v.get("callsign", ""), 7)
+    bits += sixbit_ascii(v.get("name", ""), 20)
+    bits += "{:08b}".format(safe_int(v.get("type"), 0))
     bits += "{:09b}".format(safe_int(v.get("A"), 0))
     bits += "{:09b}".format(safe_int(v.get("B"), 0))
     bits += "{:06b}".format(safe_int(v.get("C"), 0))
     bits += "{:06b}".format(safe_int(v.get("D"), 0))
     
-    # Simple ETA parsing
-    eta = v.get("ETA", "00-00 00:00")
+    eta = v.get("eta", "00-00 00:00")
     try:
         month, day, hour, minute = int(eta[0:2]), int(eta[3:5]), int(eta[6:8]), int(eta[9:11])
     except:
@@ -112,33 +111,35 @@ def encode_msg_type5(v):
     bits += "{:05b}".format(day)
     bits += "{:05b}".format(hour)
     bits += "{:06b}".format(minute)
-    bits += "{:08b}".format(int(safe_float(v.get("DRAUGHT"), 0) * 10))
-    bits += sixbit_ascii(v.get("DEST", ""), 20)
-    bits += "0"                                # DTE
-    bits += "0"                                # Spare
+    bits += "{:08b}".format(int(safe_float(v.get("draught"), 0) * 10))
+    bits += sixbit_ascii(v.get("dest", ""), 20)
+    bits += "0" # DTE
+    bits += "0" # Spare
     
     bits = bits.ljust(424, "0")
-    return bits
+    return bits # Still returns bits for the multi-part splitter
 
 def vessels_to_nmea(vessels):
     out = []
     for v in vessels:
-        # MSG 1
-        p, f = encode_msg_type1(v)
+        # MSG 1 - Fix keys to lowercase
+        # Use v.get("lat") and v.get("lon") in encode_msg_type1 as well!
+        p, f = encode_msg_type1(v) 
         if p:
             body = "AIVDM,1,1,,A,{},{}".format(p, f)
-            out.append("!{}*{}".format(body, nmea_checksum(body)))
+            out.append("!{}*{}\r\n".format(body, nmea_checksum(body))) # Added \r\n
 
-        # MSG 5 (Multi-sentence)
+        # MSG 5
         bits5 = encode_msg_type5(v)
         if bits5:
-            # Type 5 is 424 bits. Part 1 (chars 1-59), Part 2 (rest)
-            # Standard split: Part 1 = 354 bits (59 chars), Part 2 = 70 bits
+            # 424 bits total. Split at 354 bits (59 characters)
             p1, f1 = sixbit_encode(bits5[:354])
             p2, f2 = sixbit_encode(bits5[354:])
             
-            b1 = "AIVDM,2,1,1,A,{},{}".format(p1, f1)
-            b2 = "AIVDM,2,2,1,A,{},{}".format(p2, f2)
-            out.append("!{}*{}".format(b1, nmea_checksum(b1)))
-            out.append("!{}*{}".format(b2, nmea_checksum(b2)))
+            # The '1' in the 4th field is the sequential message ID
+            msg_id = random.randint(0, 9) 
+            b1 = "AIVDM,2,1,{},A,{},{}".format(msg_id, p1, f1)
+            b2 = "AIVDM,2,2,{},A,{},{}".format(msg_id, p2, f2)
+            out.append("!{}*{}\r\n".format(b1, nmea_checksum(b1)))
+            out.append("!{}*{}\r\n".format(b2, nmea_checksum(b2)))
     return out
