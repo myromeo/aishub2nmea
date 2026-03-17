@@ -2,15 +2,14 @@ import os
 from urllib.parse import urlencode
 from dotenv import load_dotenv
 
-# IMPORTANT: do NOT override Portainer environment variables
+# Do not overwrite environment variables provided by Portainer
 load_dotenv(override=False)
 
 
 class Config:
-
-    # AISHub API parameters
+    # AISHub parameters
     USERNAME = os.getenv("AIS_USERNAME")
-    FORMAT = os.getenv("AIS_FORMAT", "0")     # MUST be 0 for raw encoded ints
+    FORMAT = os.getenv("AIS_FORMAT", "0")
     OUTPUT = os.getenv("AIS_OUTPUT", "xml")
     COMPRESS = os.getenv("AIS_COMPRESS", "0")
 
@@ -23,13 +22,13 @@ class Config:
     IMO = os.getenv("IMO", "")
     INTERVAL = os.getenv("INTERVAL", "")
 
-    # Streaming rate
+    # AIS streaming parameters
     MESSAGES_PER_SECOND = float(os.getenv("MESSAGES_PER_SECOND", "5"))
 
-    # Poll frequency
+    # Polling interval
     POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "60"))
 
-    # UDP target
+    # UDP Output
     UDP_HOST = os.getenv("UDP_HOST", "127.0.0.1")
     UDP_PORT = int(os.getenv("UDP_PORT", "10110"))
 
@@ -51,8 +50,7 @@ class Config:
             "interval": Config.INTERVAL,
         }
 
-        # Remove blanks
-        clean_params = {k: v for k, v in params.items() if v not in ("", None, " ")}
+        # remove empty params
+        clean = {k: v for k, v in params.items() if v and str(v).strip() != ""}
 
-        return base + urlencode(clean_params)
-``
+        return base + urlencode(clean)
