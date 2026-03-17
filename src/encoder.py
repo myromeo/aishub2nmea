@@ -19,9 +19,12 @@ def safe_float(v, default=0.0):
         return default
 
 def to_signed(value, bits):
+    """Encodes a signed integer into a two's complement binary string."""
     if value < 0:
         value = (1 << bits) + value
-    return format(value & ((1 << bits) - 1), "0{}b".format(bits))
+    # Clamp value to bit range to prevent format errors
+    value = max(0, min(value, (1 << bits) - 1))
+    return format(value, f"0{bits}b")
 
 def sixbit_ascii(text, length):
     if not text:
