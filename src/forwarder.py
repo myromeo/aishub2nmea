@@ -5,39 +5,26 @@ import random
 
 logger = logging.getLogger("aishub2nmea")
 
-
-def stream_udp_realtime(nmea_list, host, port, mps=5):
+def stream_udp_fast(nmea_list, host, port):
     """
-    Stream AIS messages in a real-time manner.
-    mps = messages per second (default 5)
+    Blasts AIS messages as fast as the CPU/Network allows.
+    No shuffling, no delays.
     """
-
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
-    if mps <= 0:
-        mps = 1
-
-    delay = 1.0 / float(mps)
     total = len(nmea_list)
 
-    logger.info(f"Starting real-time AIS stream: {total} messages @ ~{mps} msg/s")
+    logger.info(f"Blasting {total} AIS messages to {host}:{port}")
 
-    # Shuffle to simulate natural timing
-    random.shuffle(nmea_list)
-
-    MAX_DEBUG = 5
-    debug_count = 0
-
+    # Process sequentially (Important for Type 5 Part 1 & 2 to stay together)
     for msg in nmea_list:
         if not msg.endswith("\r\n"):
             msg += "\r\n"
         
         try:
-            sock.sendto(msg.encode("ascii"), (host, port)) # Use ascii for NMEA
+            # We send each sentence in its own UDP packet, but with 0 delay.
+            sock.sendto(msg.encode("ascii"), (host, port))
         except Exception as e:
-            logger.error(f"UDP send failed")
+            logger.error(f"UDP send failed: {e}")
 
-        time.sleep(delay)
-
-    logger.info(f"Completed streaming {total} AIS messages.")
+    logger.info(f"Blast complete.")
     sock.close()
