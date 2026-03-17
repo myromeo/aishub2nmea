@@ -56,13 +56,10 @@ def nmea_checksum(body):
     return "{:02X}".format(c)
 
 def encode_msg_type1(v):
-    # Match the lowercase keys from parser.py
     mmsi = safe_int(v.get("mmsi"), None)
     if not mmsi: 
         return None, None
 
-    # AIS coordinates are signed integers: (degrees * 600,000)
-    # Range: Lat +/- 90, Lon +/- 180
     lat = safe_float(v.get("lat"))
     lon = safe_float(v.get("lon"))
     
@@ -70,36 +67,32 @@ def encode_msg_type1(v):
     lon_ais = int(lon * 600000)
 
     bits = ""
-    bits += "{:06b}".format(1)                           # Message ID (Type 1)
-    bits += "00"                                         # Repeat Indicator
-    bits += "{:030b}".format(mmsi)                       # MMSI
-    bits += "{:04b}".format(safe_int(v.get("navstat"), 15)) # Nav Status
-    
-    # ROT: 0 to +126 (right), 0 to -126 (left). -128 (80h) = not available
+    bits += "{:06b}".format(1)                           # Msg ID
+    bits += "00"                                         # Repeat
+    bits += "{:030b}".format(mmsi)
+    bits += "{:04b}".format(safe_int(v.get("navstat"), 15))
     bits += to_signed(safe_int(v.get("rot"), -128), 8)
     
-    # SOG: 10 bit, units 0.1 knots. 1023 = not available
     sog_val = int(safe_float(v.get("sog"), 102.3) * 10)
     bits += "{:010b}".format(min(sog_val, 1023))
     
-    bits += v.get("accuracy", "0")                       # Position Accuracy
-    bits += to_signed(lon_ais, 28)                       # Longitude
-    bits += to_signed(lat_ais, 27)                       # Latitude
+    # FIX: Ensure accuracy is a 1-bit string
+    acc = safe_int(v.get("accuracy"), 0)
+    bits += "{:01b}".format(1 if acc else 0)
     
-    # COG: 12 bit, units 0.1 degrees. 3600 = not available
+    bits += to_signed(lon_ais, 28)
+    bits += to_signed(lat_ais, 27)
+    
     cog_val = int(safe_float(v.get("cog"), 360) * 10)
     bits += "{:012b}".format(min(cog_val, 3600))
     
-    # Heading: 0-359. 511 = not available
     bits += "{:09b}".format(safe_int(v.get("heading"), 511))
-    
-    bits += "{:06b}".format(datetime.datetime.utcnow().second) # Time Stamp
-    bits += "00"                                         # Special Maneuver
+    bits += "{:06b}".format(datetime.datetime.utcnow().second)
+    bits += "00"                                         # Maneuver
     bits += "0"                                          # Spare
-    bits += "0"                                          # RAIM Flag
-    bits += "0" * 19                                     # Radio Status (Default)
+    bits += "0"                                          # RAIM
+    bits += "0" * 19                                     # Radio
     
-    # Ensure the bitstring is exactly 168 bits for Type 1
     bits = bits.ljust(168, "0")
     return sixbit_encode(bits)
 
