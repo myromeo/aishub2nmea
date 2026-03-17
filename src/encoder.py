@@ -45,8 +45,7 @@ def sixbit_ascii(text, length):
 def sixbit_encode(bitstring):
     """
     NMEA 0183 / AIS Armoring Logic.
-    This converts binary bits into the specific ASCII range required by AIS.
-    Matches the '34cqr' style seen in your working SDR feed.
+    Converts binary bits into the ASCII range 48-119, skipping 88-95.
     """
     fill = (6 - (len(bitstring) % 6)) % 6
     bitstring += "0" * fill
@@ -55,8 +54,6 @@ def sixbit_encode(bitstring):
     for i in range(0, len(bitstring), 6):
         val = int(bitstring[i:i+6], 2)
         # Standard NMEA Armoring Offset:
-        # Values 0-39 map to ASCII 48-87 ('0' to 'W')
-        # Values 40-63 map to ASCII 96-119 ('`' to 'w')
         if val < 40:
             char_code = val + 48
         else:
@@ -81,7 +78,7 @@ def encode_msg_type1(v):
     lon_ais = int(lon * 600000)
 
     bits = ""
-    bits += "{:06b}".format(1)                           # Msg ID (Type 1)
+    bits += "{:06b}".format(1)                           # Msg ID
     bits += "00"                                         # Repeat
     bits += "{:030b}".format(mmsi)
     bits += "{:04b}".format(safe_int(v.get("navstat"), 15))
@@ -114,7 +111,7 @@ def encode_msg_type5(v):
     if not mmsi: return None
 
     bits = ""
-    bits += "{:06b}".format(5)                           # Msg ID (Type 5)
+    bits += "{:06b}".format(5)
     bits += "00"
     bits += "{:030b}".format(mmsi)
     bits += "00"                                         # AIS version
@@ -147,32 +144,33 @@ def encode_msg_type5(v):
 
 def vessels_to_nmea(vessels):
     out = []
+    # Sequence counter remains stable across the whole batch
     seq_counter = 0
 
     for v in vessels:
-        # Type 1
+        # 1. Handle Position Report (Type 1)
         p, f = encode_msg_type1(v)
         if p:
             body = f"AIVDM,1,1,,A,{p},{f}"
             out.append(f"!{body}*{nmea_checksum(body)}\r\n")
 
-        # Type 5
+        # 2. Handle Static Data (Type 5)
         bits5 = encode_msg_type5(v)
         if bits5:
-            # Split exactly for Type 5 (424 bits total)
-            # Standard Split: 57 chars (342 bits) + 14 chars (82 bits)
+            # We use ONE seq_id for both parts of THIS vessel
+            this_seq_id = seq_counter % 10
+            seq_counter += 1
+            
+            # Split: Part 1 = 342 bits, Part 2 = 82 bits
             p1, _ = sixbit_encode(bits5[:342])
             p2, _ = sixbit_encode(bits5[342:])
             
-            seq_id = seq_counter % 10
-            seq_counter += 1
-            
-            # Sentence 1: Fill 0
-            b1 = f"AIVDM,2,1,{seq_id},A,{p1},0"
+            # Sentence 1 of 2 (Force fill 0)
+            b1 = f"AIVDM,2,1,{this_seq_id},A,{p1},0"
             out.append(f"!{b1}*{nmea_checksum(b1)}\r\n")
             
-            # Sentence 2: Fill 2
-            b2 = f"AIVDM,2,2,{seq_id},A,{p2},2"
+            # Sentence 2 of 2 (Force fill 2 for 424-bit msg)
+            b2 = f"AIVDM,2,2,{this_seq_id},A,{p2},2"
             out.append(f"!{b2}*{nmea_checksum(b2)}\r\n")
             
     return out
