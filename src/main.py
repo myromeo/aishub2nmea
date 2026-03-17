@@ -35,7 +35,14 @@ def main():
             logger.info(f"Encoded {len(nmea)} AIS NMEA sentences")
 
             logger.debug("Sending AIS messages via UDP…")
-            send_udp(nmea, Config.UDP_HOST, Config.UDP_PORT)
+            from forwarder import stream_udp_realtime
+
+            stream_udp_realtime(
+                nmea_list=nmea,
+                host=Config.UDP_HOST,
+                port=Config.UDP_PORT,
+                mps=Config.MESSAGES_PER_SECOND if hasattr(Config, "MESSAGES_PER_SECOND") else 5
+            )
 
             logger.info(f"Sent {len(nmea)} AIS messages to {Config.UDP_HOST}:{Config.UDP_PORT}")
 
