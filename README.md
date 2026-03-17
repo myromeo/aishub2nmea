@@ -1,17 +1,16 @@
-# AISHub-to-UDP Forwarder 🛰️
-
-A high-performance Python service that bridges the **AISHub API** to local AIS decoders (like **AIS-catcher**). It fetches XML vessel data, encodes it into bit-perfect AIVDM NMEA sentences, and forwards them via UDP.
-
-## 🛠 Features
-* **Sequential Payload Delivery:** Sends multi-part Type 5 messages (Static Data) in a tight sequence to ensure decoders link them correctly.
-* **Auto-Alignment:** Handles the complex 424-bit padding required for AIS Type 5 to prevent text corruption in destination fields.
-* **Dockerized:** Ready for `ghcr.io` deployment with zero local dependencies.
+This is the final, comprehensive `README.md` that perfectly balances your minimalist requirements with the technical documentation provided by AISHub.
 
 ---
 
-## 🚀 Deployment (Docker Compose)
+# aishub2nmea 🚢
 
-The most reliable way to run this is alongside your AIS-catcher container:
+**aishub2nmea** is a high-performance bridge service designed for maritime data enthusiasts. It fetches live vessel positions from the **AISHub Web Service**, converts the raw data into valid **NMEA !AIVDM** sentences, and streams them via UDP to your local AIS decoder (such as AIS-catcher, PilotLogic, or OpenCPN).
+
+This package is specifically optimized to handle large bursts of data (7,000+ messages) by pacing the delivery at **200 msg/sec**, ensuring your receiver's UDP buffers do not overflow and multi-part messages are reassembled correctly.
+
+## 🚀 Quick Start (Docker Compose)
+
+The example below is pre-configured for **UK Waters**. 
 
 ```yaml
 services:
@@ -20,63 +19,67 @@ services:
     container_name: ais-forwarder
     restart: unless-stopped
     environment:
-      - AIS_USER=AH_XXXX_XXXX   # Your AISHub Username
-      - TARGET_HOST=shipfeeder # Container name or IP
-      - TARGET_PORT=50001   # Your container port
-      - LAT_MIN=48.2
-      - LAT_MAX=63.9
-      - LON_MIN=-14.9
-      - LON_MAX=3.4
-      - INTERVAL=60            # Pull every 60 seconds
+      - AIS_USERNAME=AH_XXXX_XXXX  # Required: Your AISHub username
+      - UDP_HOST=shipfeeder       # The container name of your AIS receiver
+      - UDP_PORT=50001
+      - LAT_MIN=48.2               # UK South
+      - LAT_MAX=63.9               # UK North
+      - LON_MIN=-14.9              # UK West
+      - LON_MAX=3.4                # UK East
+      - INTERVAL=60                # API Polling Interval
     networks:
-      - shipfeeder_net
+      - ais_network
 
 networks:
-  shipfeeder_net:
+  ais_network:
     external: true
 ```
 
+> [!CAUTION]
+> **RATE LIMIT ADVISORY:** Do not set the `INTERVAL` faster than **60 seconds**. AISHub strictly enforces rate limits based on your account type. Polling too frequently will result in empty data sets or temporary IP bans.
+
 ---
 
-## ⚙️ Configuration Variables
+## ⚙️ Available Parameters
 
-### 🔴 Fixed Parameters (Do Not Change)
-These are required for the internal parser to function. Changing these in your script will cause decoding errors.
-* **`format`**: `1` (Human-readable XML structure)
-* **`compress`**: `0` (Uncompressed for direct parsing)
-* **`output`**: `xml`
+These variables can be defined in the `environment` section of your `docker-compose.yml`.
 
-### 🟢 Customization Variables
-| Variable | Description | Default |
+| Variable | Default | AISHub Description |
 | :--- | :--- | :--- |
-| `AIS_USER` | Your AISHub Username | **REQUIRED** |
-| `TARGET_HOST` | UDP Destination (IP or Hostname) | `localhost` |
-| `TARGET_PORT` | UDP Destination Port | `50001` |
-| `INTERVAL` | Seconds between API pulls | `60` |
-
-### 🌐 Bounding Box (Default: UK Waters)
-Adjust these to change your coverage area.
-* **`LAT_MIN` / `LAT_MAX`**: `48.2` to `63.9`
-* **`LON_MIN` / `LON_MAX`**: `-14.9` to `3.4`
-
----
-
-## 📡 Network Tips
-
-* **Internal Networking:** If running in Docker, ensure this container is on the **same network** as your AIS receiver. Use the receiver's **container name** as the `TARGET_HOST`.
-* **UDP Traffic:** Unlike TCP, UDP doesn't "handshake." Use `tcpdump -i any udp port 50001 -A` on your host to verify data is actually flowing if you don't see ships on your map.
-* **API Limits:** Ensure your `INTERVAL` doesn't exceed your AISHub subscription limits (usually 60 seconds for basic users).
+| `AIS_USERNAME` | - | **Required:** Your AISHub username. You will receive it after joining AISHub. |
+| `AIS_FORMAT` | `1` | Format of data values (0 – AIS encoding, 1 – Human readable format). |
+| `AIS_OUTPUT` | `xml` | Output format (xml, json, csv). |
+| `AIS_COMPRESS` | `0` | Compression (0 – no compression, 1 – ZIP, 2 – GZIP, 3 – BZIP2). |
+| `LAT_MIN` | `48.5` | South (minimum) latitude. |
+| `LAT_MAX` | `51.5` | North (maximum) latitude. |
+| `LON_MIN` | `-6.5` | West (minimum) longitude. |
+| `LON_MAX` | `2.5` | East (maximum) longitude. |
+| `MMSI` | - | MMSI number or list of numbers (webservice returns data for requested vessels only). |
+| `IMO` | - | IMO number or list of numbers (webservice returns data for requested vessels only). |
+| `INTERVAL` | `60` | The maximum age of the returned positions (in minutes). |
+| `UDP_HOST` | `shipfeeder` | The hostname/container name of your NMEA receiver. |
+| `UDP_PORT` | `50001` | The UDP port of your NMEA receiver. |
 
 ---
 
-## 📦 How to Build (Local)
-If you want to modify the code and build your own image:
-```bash
-docker build -t ais-forwarder .
-```
+## 🌐 Docker Networking
+
+To allow `ais-forwarder` to communicate with your AIS receiver, they must share a Docker network.
+
+1. **Service Discovery:** Use the **container_name** of your receiver as the `UDP_HOST`.
+2. **External Networks:** If your receiver is in a different Compose file, ensure both services use an externally defined network:
+   ```bash
+   docker network create ais_network
+   ```
+   Then set `external: true` in your `networks` section as shown in the Quick Start.
 
 ---
 
-### Final Polish for your Repository:
-1.  **License:** Consider adding an `MIT License` file so people know they can use it.
-2.  **Secrets:** Remind users in the README **never** to commit their `AIS_USER` to their own public forks.
+## 🛠 Technical Details
+* **Fixed Pacing:** Regardless of the volume of data, the streamer is locked at **200 messages per second**.
+* **Order Preservation:** Messages are sent in the exact sequence they are received from the API to ensure Type 5 Static Data parts 1 and 2 remain linked.
+* **Auto-Padding:** The encoder automatically handles 6-bit alignment and padding for NMEA sentences.
+
+---
+
+**Everything looks solid! Would you like me to generate a simple `.dockerignore` file to ensure your `.git` and `.env` folders aren't accidentally bundled into the public image?**
