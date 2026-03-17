@@ -10,7 +10,6 @@ from forwarder import stream_udp_realtime
 
 logger = setup_logging()
 
-
 def main():
     logger.info("AIS Streamer starting...")
 
@@ -19,14 +18,13 @@ def main():
             logger.info("Requesting AIS data...")
             xml = fetch_ais_data()
 
-            logger.info("Parsing AIS XML...")
             vessels = parse_aishub_xml(xml)
             logger.info(f"Parsed {len(vessels)} vessels")
 
-            # Debug sample vessel
+            # Debug sample vessel - Changed to DEBUG to tidy the noggin
             if vessels:
                 v = vessels[0]
-                logger.warning(
+                logger.debug(
                     f"SAMPLE RAW: lat={v['lat']} lon={v['lon']} sog={v['sog']} cog={v['cog']} "
                     f"navstat={v['navstat']} rot={v['rot']}"
                 )
@@ -35,19 +33,18 @@ def main():
             nmea = vessels_to_nmea(vessels)
             logger.info(f"Encoded {len(nmea)} AIS messages")
 
+            # Removed 'mps' argument to match the hard-coded 200 msg/sec function
             stream_udp_realtime(
                 nmea_list=nmea,
                 host=Config.UDP_HOST,
-                port=Config.UDP_PORT,
-                mps=Config.MESSAGES_PER_SECOND
+                port=Config.UDP_PORT
             )
 
         except Exception as e:
             logger.error("Unhandled error in main loop", exc_info=True)
 
-        logger.info(f"Sleeping {Config.POLL_INTERVAL} seconds before next poll…")
+        logger.info(f"Sleeping {Config.POLL_INTERVAL} seconds before next poll...")
         time.sleep(Config.POLL_INTERVAL)
-
 
 if __name__ == "__main__":
     main()
