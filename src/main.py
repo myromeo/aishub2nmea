@@ -1,55 +1,50 @@
 import time
+import logging
+
 from config import Config
 from aishub import fetch_ais_data
 from parser import parse_aishub_xml
 from encoder import vessels_to_nmea
-from forwarder import send_udp
+from forwarder import stream_udp_realtime
 from logger import setup_logging
 
 logger = setup_logging()
-import os
-logger.info("ACTIVE ENVIRONMENT VARIABLES:")
-for key in os.environ:
-    if key.startswith("AIS_") or key in ("LAT_MIN", "LAT_MAX", "LON_MIN", "LON_MAX", "UDP_HOST", "UDP_PORT"):
-        logger.info(f"  {key} = {os.environ[key]}")
 
 def main():
     logger.info("AIS Streamer starting...")
 
     while True:
         try:
-            logger.debug("Requesting AIS data...")
+            logger.debug("Requesting AIS data from AISHub...")
             xml = fetch_ais_data()
 
             logger.debug("Parsing XML data...")
             vessels = parse_aishub_xml(xml)
-
             logger.info(f"Parsed {len(vessels)} vessel positions")
 
             if len(vessels) == 0:
-                logger.warning("No vessels received! Check .env parameters and AISHub account.")
+                logger.warning("No vessels received! Check geofence / username / interval settings.")
 
             logger.debug("Encoding vessels to AIS NMEA sentences...")
             nmea = vessels_to_nmea(vessels)
+            logger.info(f"Encoded {len(nmea)} AIS messages")
 
-            logger.info(f"Encoded {len(nmea)} AIS NMEA sentences")
-
-            logger.debug("Sending AIS messages via UDP…")
-            from forwarder import stream_udp_realtime
+            mps = getattr(Config, "MESSAGES_PER_SECOND", 5)
+            logger.info(f"Streaming in real‑time at {mps} messages/sec")
 
             stream_udp_realtime(
                 nmea_list=nmea,
                 host=Config.UDP_HOST,
                 port=Config.UDP_PORT,
-                mps=Config.MESSAGES_PER_SECOND if hasattr(Config, "MESSAGES_PER_SECOND") else 5
+                mps=mps
             )
-
-            logger.info(f"Sent {len(nmea)} AIS messages to {Config.UDP_HOST}:{Config.UDP_PORT}")
 
         except Exception as e:
             logger.error(f"Unhandled error occurred: {e}", exc_info=True)
 
+        logger.info(f"Sleeping {Config.POLL_INTERVAL} seconds before next poll...")
         time.sleep(Config.POLL_INTERVAL)
+
 
 if __name__ == "__main__":
     main()
