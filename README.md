@@ -18,10 +18,10 @@ services:
       - AIS_USERNAME=AH_XXXX_XXXX  # Required: Your AISHub username
       - UDP_HOST=shipfeeder       # The container name of your AIS receiver
       - UDP_PORT=50001
-      - LAT_MIN=48.2               # UK South
-      - LAT_MAX=63.9               # UK North
-      - LON_MIN=-14.9              # UK West
-      - LON_MAX=3.4                # UK East
+      - LAT_MIN=49.7   # South
+      - LAT_MAX=58.8   # North
+      - LON_MIN=-8     # West
+      - LON_MAX=2.1    # East
     networks:
       - ais_network
 
