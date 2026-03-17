@@ -7,6 +7,11 @@ from forwarder import send_udp
 from logger import setup_logging
 
 logger = setup_logging()
+import os
+logger.info("ACTIVE ENVIRONMENT VARIABLES:")
+for key in os.environ:
+    if key.startswith("AIS_") or key in ("LAT_MIN", "LAT_MAX", "LON_MIN", "LON_MAX", "UDP_HOST", "UDP_PORT"):
+        logger.info(f"  {key} = {os.environ[key]}")
 
 def main():
     logger.info("AIS Streamer starting...")
