@@ -2,7 +2,7 @@
 
 **aishub2nmea** is a high-performance bridge service designed for maritime data enthusiasts. It fetches live vessel positions from the **AISHub Web Service**, converts the raw data into valid **NMEA !AIVDM** sentences, and streams them via UDP to your local AIS decoder (such as AIS-catcher, PilotLogic, or OpenCPN).
 
-This package is specifically optimized to handle large bursts of data (7,000+ messages) by pacing the delivery at **200 msg/sec**, ensuring your receiver's UDP buffers do not overflow and multi-part messages are reassembled correctly.
+This package is specifically optimized to handle large bursts of data by pacing the delivery at **200 msg/sec**, ensuring your receiver's UDP buffers do not overflow and multi-part messages are reassembled correctly.
 
 ## 🚀 Quick Start (Docker Compose)
 
@@ -68,12 +68,5 @@ To allow `ais-forwarder` to communicate with your AIS receiver, they must share 
    docker network create ais_network
    ```
    Then set `external: true` in your `networks` section as shown in the Quick Start.
-
----
-
-## 🛠 Technical Details
-* **Fixed Pacing:** Regardless of the volume of data, the streamer is locked at **200 messages per second**.
-* **Order Preservation:** Messages are sent in the exact sequence they are received from the API to ensure Type 5 Static Data parts 1 and 2 remain linked.
-* **Auto-Padding:** The encoder automatically handles 6-bit alignment and padding for NMEA sentences.
 
 ---
