@@ -5,23 +5,25 @@ import os
 
 logger = logging.getLogger("aishub2nmea")
 
-def stream_udp_realtime(nmea_list, host, port):
+def stream_udp_realtime(nmea_list, host, port, mps=None):
     """
-    Streams NMEA sentences with pacing to prevent buffer overflow.
-    Target rate: ~200 messages per second (adjustable via MSG_DELAY).
+    Paced UDP streamer. 
+    Accepts 'mps' (Messages Per Second) from main.py to prevent TypeError.
     """
-    # Get pacing from environment (0.005s = 200 msg/sec)
-    # If set to 0, it will 'blast' as before.
-    delay = float(os.getenv("MSG_DELAY", 0.005))
+    # Use mps if provided, otherwise check environment, otherwise default to 200
+    if mps:
+        delay = 1.0 / float(mps)
+    else:
+        delay = float(os.getenv("MSG_DELAY", 0.005))
     
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     total = len(nmea_list)
 
     if total == 0:
-        logger.info("No messages to stream.")
+        logger.info("No vessels found in this poll. Skipping stream.")
         return
 
-    logger.info(f"Streaming {total} messages to {host}:{port} (Pacing: {delay}s)")
+    logger.info(f"Streaming {total} messages to {host}:{port} (Pacing: {delay:.4f}s)")
 
     for msg in nmea_list:
         if not msg.endswith("\r\n"):
@@ -29,12 +31,11 @@ def stream_udp_realtime(nmea_list, host, port):
         
         try:
             sock.sendto(msg.encode("ascii"), (host, port))
-            # The 'Secret Sauce': Give the receiver time to breathe
             if delay > 0:
                 time.sleep(delay)
         except Exception as e:
             logger.error(f"UDP send failed: {e}")
-            break # Stop if the network is down
+            break
 
     logger.info(f"Stream complete.")
     sock.close()
