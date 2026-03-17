@@ -16,13 +16,13 @@ The most reliable way to run this is alongside your AIS-catcher container:
 ```yaml
 services:
   ais-forwarder:
-    image: ghcr.io/YOUR_USERNAME/YOUR_REPO_NAME:latest
+    image: ghcr.io/myromeo/aishub2nmea:latest
     container_name: ais-forwarder
     restart: unless-stopped
     environment:
       - AIS_USER=AH_XXXX_XXXX   # Your AISHub Username
       - TARGET_HOST=shipfeeder # Container name or IP
-      - TARGET_PORT=50001
+      - TARGET_PORT=50001   # Your container port
       - LAT_MIN=48.2
       - LAT_MAX=63.9
       - LON_MIN=-14.9
