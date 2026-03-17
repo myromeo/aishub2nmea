@@ -3,147 +3,117 @@ import datetime
 
 logger = logging.getLogger("aishub2nmea")
 
-# AIS 6-bit ASCII Table (ITU-R M.1371)
 AIS_CHARS = "0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_ !\"#$%&'()*+,-./"
 
 
-################################################################################
-# Utility Functions
-################################################################################
+###############################################################################
+# UTILITIES — SAFE PARSING
+###############################################################################
+
+def safe_int(v, default=0):
+    try:
+        return int(float(v))
+    except:
+        return default
+
+def safe_float(v, default=0.0):
+    try:
+        return float(v)
+    except:
+        return default
+
 
 def to_signed(value, bits):
-    """Convert a signed integer into two's complement bitstring."""
+    """Convert int to two's complement binary."""
     if value < 0:
         value = (1 << bits) + value
     return format(value & ((1 << bits) - 1), f"0{bits}b")
 
 
 def sixbit_ascii(text, length):
-    """
-    Convert text to AIS 6-bit ASCII padded to fixed length.
-    AIS uses 6-bit characters: ASCII 32 -> 63.
-    """
+    """Convert string to AIS 6-bit ASCII padded to length."""
     if text is None:
         text = ""
-
-    text = text.upper()
-    text = "".join(c if 32 <= ord(c) <= 126 else " " for c in text)
-    text = text[:length].ljust(length)
-
+    text = text.upper()[:length].ljust(length)
     bits = ""
-    for char in text:
-        code = ord(char) - 32
-        if code < 0 or code > 63:
+    for c in text:
+        code = ord(c) - 32
+        if not (0 <= code <= 63):
             code = 0
         bits += format(code, "06b")
-
     return bits
 
 
-def sixbit_encode(bitstring):
-    """
-    Convert binary string into AIS 6-bit payload.
-    """
-    while len(bitstring) % 6 != 0:
-        bitstring += "0"
-
+def sixbit_encode(bits):
+    """Binary → 6-bit AIS payload."""
+    while len(bits) % 6 != 0:
+        bits += "0"
     payload = ""
-    for i in range(0, len(bitstring), 6):
-        chunk = bitstring[i:i+6]
-        payload += AIS_CHARS[int(chunk, 2)]
-
-    fill = (6 - (len(bitstring) % 6)) % 6
+    for i in range(0, len(bits), 6):
+        payload += AIS_CHARS[int(bits[i:i+6], 2)]
+    fill = (6 - len(bits) % 6) % 6
     return payload, fill
 
 
 def nmea_checksum(body):
-    cs = 0
+    c = 0
     for ch in body:
-        cs ^= ord(ch)
-    return f"{cs:02X}"
+        c ^= ord(ch)
+    return f"{c:02X}"
 
 
-################################################################################
-# AIS Message Type 1 (Dynamic Position)
-################################################################################
+###############################################################################
+# MESSAGE TYPE 1 — DYNAMIC POSITION
+###############################################################################
 
 def encode_msg_type1(v):
-    """Encode AIS Message Type 1 from AISHub HUMAN FORMAT."""
 
-    try:
-        mmsi = int(v["mmsi"])
-    except:
+    mmsi = safe_int(v.get("mmsi"), None)
+    if not mmsi:
         return None, None
 
-    # Human readable lat/lon
-    try:
-        lat = float(v["lat"])
-        lon = float(v["lon"])
-    except:
+    lat = safe_float(v.get("lat"), None)
+    lon = safe_float(v.get("lon"), None)
+    if lat is None or lon is None:
         return None, None
-
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return None, None
 
     lat_ais = int(lat * 600000)
     lon_ais = int(lon * 600000)
 
-    # Navigation status (0–15)
-    try:
-        navstat = int(v.get("navstat", 15))
-    except:
-        navstat = 15
+    navstat = safe_int(v.get("navstat"), 15)
     navstat = max(0, min(15, navstat))
 
-    # ROT
-    try:
-        rot_raw = int(v.get("rot", 128))
-    except:
-        rot_raw = 128
-    if rot_raw in (127, 128, -127):
-        rot = 128
-    else:
-        rot = max(-127, min(127, rot_raw))
+    rot_raw = safe_int(v.get("rot"), 128)
+    rot = 128 if rot_raw in (127, 128, -127) else max(-127, min(127, rot_raw))
 
-    # SOG
-    try:
-        sog_knots = float(v.get("sog", 0))
-    except:
-        sog_knots = 0
-    if sog_knots < 0.1:
+    sog_kts = safe_float(v.get("sog"), 0)
+    if sog_kts < 0.1:
         sog = 0
-    elif sog_knots > 102.2:
+    elif sog_kts > 102.2:
         sog = 1023
     else:
-        sog = int(sog_knots * 10)
+        sog = int(sog_kts * 10)
 
-    # COG
-    try:
-        cog_deg = float(v.get("cog", 360))
-    except:
-        cog_deg = 360
+    cog_deg = safe_float(v.get("cog"), 360)
     if cog_deg < 0 or cog_deg >= 360:
         cog = 3600
     else:
         cog = int(cog_deg * 10)
 
-    # Heading
-    try:
-        heading = int(v.get("heading", 511))
-    except:
-        heading = 511
-    if not (0 <= heading <= 359):
+    heading = safe_int(v.get("heading"), 511)
+    if heading < 0 or heading > 359:
         heading = 511
 
-    # PAC
-    accuracy = 1 if int(v.get("accuracy", 0)) else 0
+    accuracy = 1 if safe_int(v.get("accuracy"), 0) else 0
 
-    timestamp = datetime.datetime.utcnow().second  # 0–59
+    timestamp = datetime.datetime.utcnow().second
 
     bits = ""
-    bits += format(1, "06b")            # Msg ID
-    bits += format(0, "02b")            # Repeat
-    bits += format(mmsi, "030b")        # MMSI
+    bits += format(1, "06b")
+    bits += format(0, "02b")
+    bits += format(mmsi, "030b")
     bits += format(navstat, "04b")
     bits += to_signed(rot, 8)
     bits += format(sog, "010b")
@@ -153,80 +123,58 @@ def encode_msg_type1(v):
     bits += format(cog, "012b")
     bits += format(heading, "09b")
     bits += format(timestamp, "06b")
-    bits += format(0, "02b")            # Maneuver
-    bits += format(0, "01b")            # RAIM
-    bits += format(0, "019b")           # Radio status
+    bits += format(0, "02b")
+    bits += format(0, "01b")
+    bits += format(0, "019b")
 
     if len(bits) != 168:
-        logger.error(f"BAD MSG1 LENGTH {len(bits)} for MMSI={mmsi}")
+        logger.error(f"MSG1 BAD LENGTH {len(bits)} for MMSI={mmsi}")
         return None, None
 
     payload, fill = sixbit_encode(bits)
     return payload, fill
 
 
-################################################################################
-# AIS Message Type 5 (Static & Voyage Data)
-################################################################################
+###############################################################################
+# MESSAGE TYPE 5 — STATIC / VOYAGE DATA
+###############################################################################
 
 def encode_msg_type5(v):
-    """
-    Encode AIS Message Type 5 using AISHub HUMAN FORMAT.
-    Includes:
-    Name, Callsign, IMO, Type, Dimensions, Draught, Destination, ETA.
-    """
 
-    try:
-        mmsi = int(v["mmsi"])
-    except:
+    mmsi = safe_int(v.get("mmsi"), None)
+    if not mmsi:
         return None
 
-    # IMO
+    imo = safe_int(v.get("imo") or v.get("IMO") or "0", 0)
+    callsign = v.get("callsign") or v.get("CALLSIGN") or ""
+    name     = v.get("name") or v.get("NAME") or ""
+    shiptype = safe_int(v.get("type") or v.get("TYPE"), 0)
+
+    dim_a = safe_int(v.get("A"), 0)
+    dim_b = safe_int(v.get("B"), 0)
+    dim_c = safe_int(v.get("C"), 0)
+    dim_d = safe_int(v.get("D"), 0)
+
+    draught_m = safe_float(v.get("draught") or v.get("DRAUGHT"), 0.0)
+    draught = min(255, max(0, int(draught_m * 10)))
+
+    dest = (v.get("dest") or v.get("DEST") or "").upper()
+
+    eta_raw = v.get("eta") or v.get("ETA") or ""
     try:
-        imo = int(v.get("imo", v.get("IMO", 0)))
-    except:
-        imo = 0
-
-    callsign = v.get("callsign", v.get("CALLSIGN", "")).upper().strip()
-    name = v.get("name", v.get("NAME", "")).upper().strip()
-    shiptype = int(v.get("type", v.get("TYPE", 0)))
-
-    # Dimensions
-    try:
-        dim_a = int(v.get("A", 0))
-        dim_b = int(v.get("B", 0))
-        dim_c = int(v.get("C", 0))
-        dim_d = int(v.get("D", 0))
-    except:
-        dim_a = dim_b = dim_c = dim_d = 0
-
-    # Draught (metres → AIS units: 0.1 m)
-    try:
-        draught_m = float(v.get("draught", v.get("DRAUGHT", 0)))
-        draught = int(draught_m * 10)
-    except:
-        draught = 0
-
-    # Destination
-    dest = v.get("dest", v.get("DEST", "")).upper().strip()
-
-    # ETA "MM-DD HH:MM"
-    eta_raw = v.get("eta", v.get("ETA", ""))
-    try:
-        month = int(eta_raw[0:2])
-        day = int(eta_raw[3:5])
-        hour = int(eta_raw[6:8])
+        month  = int(eta_raw[0:2])
+        day    = int(eta_raw[3:5])
+        hour   = int(eta_raw[6:8])
         minute = int(eta_raw[9:11])
     except:
         month = day = hour = minute = 0
 
-    # Assemble 424-bit Msg 5
     bits = ""
     bits += format(5, "06b")
     bits += format(0, "02b")
     bits += format(mmsi, "030b")
     bits += format(1, "02b")              # AIS version
-    bits += format(imo, "030b")           # IMO
+    bits += format(imo, "030b")
 
     bits += sixbit_ascii(callsign, 7)
     bits += sixbit_ascii(name, 20)
@@ -237,32 +185,31 @@ def encode_msg_type5(v):
     bits += format(dim_c, "06b")
     bits += format(dim_d, "06b")
 
-    bits += format(month, "04b")
-    bits += format(day, "05b")
-    bits += format(hour, "05b")
+    bits += format(month,  "04b")
+    bits += format(day,    "05b")
+    bits += format(hour,   "05b")
     bits += format(minute, "06b")
 
     bits += format(draught, "08b")
     bits += sixbit_ascii(dest, 20)
 
     bits += format(0, "01b")  # DTE
-    bits += format(0, "01b")  # Spare
+    bits += format(0, "01b")  # spare
 
     if len(bits) != 424:
-        logger.error(f"BAD MSG5 LENGTH {len(bits)} for MMSI={mmsi}")
+        logger.error(f"MSG5 BAD LENGTH {len(bits)} for MMSI={mmsi}")
         return None
 
-    # Break into 2 sentences
-    # First 360 bits, then remainder
+    # Fragment into two sentences (2-fragment AIS)
     p1, f1 = sixbit_encode(bits[:360])
     p2, f2 = sixbit_encode(bits[360:])
 
     return p1, f1, p2, f2
 
 
-################################################################################
-# Batch Encode: Msg 1 + Msg 5 (once per cycle)
-################################################################################
+###############################################################################
+# BATCH MODE — generate Msg1 + Msg5 per vessel
+###############################################################################
 
 def build_nmea_sentence(payload, fill):
     body = f"AIVDM,1,1,,A,{payload},{fill}"
@@ -273,16 +220,13 @@ def vessels_to_nmea(vessels):
     out = []
 
     for v in vessels:
-        #
-        # Msg 1 (dynamic)
-        #
+
+        # MSG 1
         p, f = encode_msg_type1(v)
         if p:
             out.append(build_nmea_sentence(p, f))
 
-        #
-        # Msg 5 (static) — Option A: send once each cycle
-        #
+        # MSG 5
         m5 = encode_msg_type5(v)
         if m5:
             p1, f1, p2, f2 = m5
@@ -293,5 +237,5 @@ def vessels_to_nmea(vessels):
             body2 = f"AIVDM,2,2,,A,{p2},{f2}"
             out.append(f"!{body2}*{nmea_checksum(body2)}")
 
-    logger.debug(f"Encoded {len(out)} AIS sentences total")
+    logger.info(f"Encoded {len(out)} AIS messages total")
     return out
