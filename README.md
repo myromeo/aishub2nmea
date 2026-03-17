@@ -26,7 +26,6 @@ services:
       - LAT_MAX=63.9               # UK North
       - LON_MIN=-14.9              # UK West
       - LON_MAX=3.4                # UK East
-      - INTERVAL=60                # API Polling Interval
     networks:
       - ais_network
 
@@ -56,9 +55,10 @@ These variables can be defined in the `environment` section of your `docker-comp
 | `LON_MAX` | `2.5` | East (maximum) longitude. |
 | `MMSI` | - | MMSI number or list of numbers (webservice returns data for requested vessels only). |
 | `IMO` | - | IMO number or list of numbers (webservice returns data for requested vessels only). |
-| `INTERVAL` | `60` | The maximum age of the returned positions (in minutes). |
+| `INTERVAL` | `30` | The maximum age of the returned positions (in minutes). |
 | `UDP_HOST` | `shipfeeder` | The hostname/container name of your NMEA receiver. |
 | `UDP_PORT` | `50001` | The UDP port of your NMEA receiver. |
+| `POLL_INTERVAL` | `60` | Frequency of API requests in seconds. |
 
 ---
 
