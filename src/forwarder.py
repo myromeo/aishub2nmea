@@ -29,17 +29,13 @@ def stream_udp_realtime(nmea_list, host, port, mps=5):
     debug_count = 0
 
     for msg in nmea_list:
-
-        # Debug truncated message
-        if debug_count < MAX_DEBUG:
-            preview = msg[:80] + ("..." if len(msg) > 80 else "")
-            logger.debug(f"UDP → {host}:{port} :: {preview}")
-            debug_count += 1
-
+        if not msg.endswith("\r\n"):
+            msg += "\r\n"
+        
         try:
-            sock.sendto(msg.encode("utf-8"), (host, port))
+            sock.sendto(msg.encode("ascii"), (host, port)) # Use ascii for NMEA
         except Exception as e:
-            logger.error(f"UDP send failed to {host}:{port}", exc_info=True)
+            logger.error(f"UDP send failed")
 
         time.sleep(delay)
 
