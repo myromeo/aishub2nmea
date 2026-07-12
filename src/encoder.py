@@ -24,14 +24,27 @@ def to_signed(value, bits):
 def sixbit_ascii(text, length):
     if not text:
         text = ""
+    # Ensure uppercase and pad with spaces to the exact length
     text = str(text).upper()[:length].ljust(length, " ")
     bits = ""
+    
     for c in text:
         code = ord(c)
-        if 32 <= code <= 63: val = code - 32
-        elif 64 <= code <= 95: val = code - 64
-        else: val = 0 
+        # Standard AIS 6-bit encoding map
+        if 32 <= code <= 63:
+            # Maps ASCII 32-63 to 6-bit 32-63
+            # Space (32) becomes 32 (binary 100000)
+            val = code
+        elif 64 <= code <= 95:
+            # Maps ASCII 64-95 to 6-bit 0-31
+            # 'A' (65) becomes 1 (binary 000001)
+            val = code - 64
+        else:
+            # Default to space (32) for unsupported characters
+            val = 32 
+            
         bits += format(val & 0x3F, "06b")
+        
     return bits
 
 def sixbit_encode(bitstring):
