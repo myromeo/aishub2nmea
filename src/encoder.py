@@ -82,7 +82,7 @@ def encode_msg_type1(v):
     bits += to_signed(lat_ais, 27)
     bits += format(min(int(safe_float(v.get("cog")) * 10), 3600), "012b")
     bits += format(safe_int(v.get("heading"), 511), "09b")
-    bits += format(datetime.datetime.utcnow().second, "06b")
+    bits += format(datetime.datetime.now(datetime.timezone.utc).second, "06b")
     bits += "0000"
     bits += "0" * 19 
     return sixbit_encode(bits)
@@ -129,30 +129,29 @@ def encode_msg_type5(v):
 
     return bits.ljust(424, "0")
 
-def vessels_to_nmea(vessels):
+def vessels_to_nmea(type1_vessels, type5_vessels):
     out = []
     seq_counter = 0
-    for v in vessels:
-        # Type 1
+
+    for v in type1_vessels:
         p, f = encode_msg_type1(v)
         if p:
             body = f"AIVDM,1,1,,A,{p},{f}"
             out.append(f"!{body}*{nmea_checksum(body)}\r\n")
 
-        # Type 5
+    for v in type5_vessels:
         raw5 = encode_msg_type5(v)
         if raw5:
-            # We must use a unique sequence ID (0-9) for the pair
             sid = seq_counter % 10
             seq_counter += 1
-            
+
             p1, _ = sixbit_encode(raw5[:342])
             p2, _ = sixbit_encode(raw5[342:])
-            
+
             b1 = f"AIVDM,2,1,{sid},A,{p1},0"
             b2 = f"AIVDM,2,2,{sid},A,{p2},2"
-            
+
             out.append(f"!{b1}*{nmea_checksum(b1)}\r\n")
             out.append(f"!{b2}*{nmea_checksum(b2)}\r\n")
-            
+
     return out
