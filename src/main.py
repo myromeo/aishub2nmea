@@ -18,6 +18,8 @@ def main():
     sock = get_udp_socket()
 
     while True:
+        cycle_start = time.monotonic()
+
         try:
             logger.info("Requesting AIS data...")
             xml = fetch_ais_data()
@@ -41,7 +43,8 @@ def main():
                     sock=sock,
                     nmea_list=nmea,
                     host=Config.UDP_HOST,
-                    port=Config.UDP_PORT
+                    port=Config.UDP_PORT,
+                    target_seconds=Config.STREAM_BUDGET_SECONDS
                 )
 
                 cache.prune()
@@ -49,8 +52,16 @@ def main():
         except Exception:
             logger.error("Unhandled error in main loop", exc_info=True)
 
-        logger.info(f"Sleeping {Config.POLL_INTERVAL} seconds before next poll...")
-        time.sleep(Config.POLL_INTERVAL)
+        elapsed = time.monotonic() - cycle_start
+        remaining = Config.POLL_INTERVAL - elapsed
+
+        if remaining > 0:
+            logger.info(f"Cycle took {elapsed:.1f}s, sleeping {remaining:.1f}s to hold {Config.POLL_INTERVAL}s cadence")
+            time.sleep(remaining)
+        else:
+            logger.warning(
+                f"Cycle took {elapsed:.1f}s, longer than POLL_INTERVAL ({Config.POLL_INTERVAL}s) — polling immediately"
+            )
 
 
 if __name__ == "__main__":

@@ -27,8 +27,13 @@ class Config:
     INTERVAL = os.getenv("INTERVAL", "30") 
     
     # POLL_INTERVAL: How Long the script sleeps between updates (Seconds)
-    POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "60"))
+    POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "65"))
 
+    # How much of POLL_INTERVAL the UDP stream itself is allowed to take.
+    # Leaves headroom for fetch/parse/encode overhead. Defaults to
+    # POLL_INTERVAL minus 15s of headroom, floor of 10s.
+    STREAM_BUDGET_SECONDS = int(os.getenv("STREAM_BUDGET_SECONDS", str(max(POLL_INTERVAL - 15, 10))))
+    
     # --- UDP Output ---
     UDP_HOST = os.getenv("UDP_HOST", "shipfeeder")
     UDP_PORT = int(os.getenv("UDP_PORT", "50001"))
